@@ -8,6 +8,11 @@ const state = {
 
 const byId = (id) => document.getElementById(id);
 
+function setRunState(value) {
+  const node = byId("run-state");
+  if (node) node.textContent = value;
+}
+
 function fmt(value, digits = 2) {
   if (value === undefined || value === null || Number.isNaN(Number(value))) return "n/a";
   return Number(value).toFixed(digits);
@@ -63,11 +68,12 @@ async function runBenchmark() {
   const button = byId("run-benchmark");
   const log = byId("benchmark-log");
   if (button.disabled) {
-    log.textContent = "The deployed site runs browser ONNX and CPU upload previews. The full YOLO/SAM CUDA benchmark runs from the local research repo.";
+    log.textContent = "GPU benchmark is available in the local research environment. This deployed site keeps uploaded-video analysis CPU/browser safe.";
     return;
   }
   button.disabled = true;
-  log.textContent = "Starting local benchmark... this loads the detector/SAM path and may take a minute.";
+  setRunState("Benchmarking");
+  log.textContent = "Running the local GPU benchmark profile.";
   try {
     const body = state.uploadedPath ? { video: state.uploadedPath } : {};
     const response = await fetch("/api/run-benchmark", {
@@ -87,10 +93,11 @@ async function runBenchmark() {
     ].join("\n");
     setText("fps", fmt(best.fps));
     setText("p95", fmt(best.frame_ms_p95));
-  } catch (error) {
-    log.textContent = String(error.message || error);
+  } catch {
+    log.textContent = "The local GPU benchmark did not complete. Browser analysis and server preview are still available.";
   } finally {
     button.disabled = false;
+    setRunState("Ready");
   }
 }
 
@@ -98,11 +105,12 @@ async function processUploadOnServer() {
   const log = byId("benchmark-log");
   const button = byId("process-upload");
   if (!state.uploadedPath) {
-    log.textContent = "Upload a clip first.";
+    log.textContent = "Select a video before rendering a server preview.";
     return;
   }
   button.disabled = true;
-  log.textContent = "Processing uploaded clip on the deployable CPU preview path...";
+  setRunState("Rendering");
+  log.textContent = "Rendering a CPU preview from the uploaded clip.";
   try {
     const response = await fetch("/api/process-upload", {
       method: "POST",
@@ -120,10 +128,11 @@ async function processUploadOnServer() {
       "",
       payload.command.join(" "),
     ].join("\n");
-  } catch (error) {
-    log.textContent = String(error.message || error);
+  } catch {
+    log.textContent = "Server preview could not finish for this clip. Try a shorter MP4/WebM file or use browser analysis.";
   } finally {
     button.disabled = false;
+    setRunState("Ready");
   }
 }
 
@@ -160,19 +169,26 @@ async function uploadFile(file) {
   state.sourceVideoUrl = objectUrl;
   video.hidden = false;
   image.hidden = true;
+  byId("browser-canvas").hidden = true;
   setText("feed-title", file.name);
-  command.textContent = "Uploading clip to local demo server...";
+  setRunState("Video selected");
+  byId("upload-caption").textContent = `${file.name} is ready for browser analysis.`;
+  command.textContent = "Preparing reproducible command for this clip.";
 
   const form = new FormData();
   form.append("video", file);
-  const response = await fetch("/api/upload", { method: "POST", body: form });
-  const payload = await response.json();
-  if (!response.ok) {
-    command.textContent = payload.error || "Upload failed.";
-    return;
+  try {
+    const response = await fetch("/api/upload", { method: "POST", body: form });
+    const payload = await response.json();
+    if (!response.ok) {
+      command.textContent = "Server upload failed. Browser analysis can still run locally on the selected video.";
+      return;
+    }
+    state.uploadedPath = payload.path;
+    command.textContent = payload.command.join(" ");
+  } catch {
+    command.textContent = "Server upload is unavailable. Browser analysis can still run locally on the selected video.";
   }
-  state.uploadedPath = payload.path;
-  command.textContent = payload.command.join(" ");
 }
 
 function letterboxToTensor(video, size = 480) {
@@ -231,9 +247,10 @@ function parseYoloNms(output, transform, video, minConf = 0.28) {
 
 async function getYoloSession() {
   if (!window.ort) {
-    throw new Error("ONNXRuntime Web did not load. Check network access or bundle ort.min.js for offline deploys.");
+    throw new Error("ONNXRuntime Web did not load.");
   }
   if (!state.yoloSession) {
+    setRunState("Loading model");
     ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
     state.yoloSession = await ort.InferenceSession.create("/media/models/yolov8n_480_nms.onnx", {
       executionProviders: ["wasm"],
@@ -253,6 +270,8 @@ async function runBrowserOnnx() {
   button.disabled = true;
   state.browserRunning = true;
   try {
+    setRunState("Loading model");
+    log.textContent = "Loading the browser ONNX model.";
     const session = await getYoloSession();
     image.hidden = true;
     video.hidden = true;
@@ -272,10 +291,13 @@ async function runBrowserOnnx() {
     const outputName = session.outputNames[0];
     let frames = 0;
     const started = performance.now();
+    setRunState("Analyzing");
     const loop = async () => {
       if (!state.browserRunning || probe.ended || frames >= 120) {
         const elapsed = (performance.now() - started) / 1000;
-        log.textContent += `\nBrowser ONNX complete: ${frames} sampled frames at ${fmt(frames / elapsed)} FPS.`;
+        const fps = fmt(frames / elapsed);
+        log.textContent += `\nBrowser analysis complete: ${frames} sampled frames at ${fps} FPS.`;
+        setRunState("Complete");
         button.disabled = false;
         return;
       }
@@ -295,14 +317,15 @@ async function runBrowserOnnx() {
       });
       frames += 1;
       const ms = performance.now() - t0;
-      log.textContent = `Browser ONNX detector running on CPU/WASM\nFrame: ${frames} | detections: ${detections.length} | last inference: ${fmt(ms)} ms`;
+      log.textContent = `Browser detector running on CPU/WASM\nFrame: ${frames} | detections: ${detections.length} | last inference: ${fmt(ms)} ms`;
       setTimeout(loop, 0);
     };
     loop();
-  } catch (error) {
+  } catch {
     state.browserRunning = false;
     button.disabled = false;
-    log.textContent = String(error.message || error);
+    setRunState("Ready");
+    log.textContent = "Browser analysis could not start. Try reloading the page or using the server preview path.";
   }
 }
 
@@ -338,6 +361,6 @@ byId("run-benchmark").addEventListener("click", runBenchmark);
 byId("run-browser-onnx").addEventListener("click", runBrowserOnnx);
 byId("process-upload").addEventListener("click", processUploadOnServer);
 wireUpload();
-loadSummary().catch((error) => {
-  byId("benchmark-log").textContent = String(error.message || error);
+loadSummary().catch(() => {
+  byId("benchmark-log").textContent = "Benchmark evidence is temporarily unavailable. Upload and browser analysis can still run.";
 });
