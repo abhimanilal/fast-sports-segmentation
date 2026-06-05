@@ -8,13 +8,13 @@ The current project positioning and measured claims are summarized in `PORTFOLIO
 
 This repo now includes a deployable browser demo:
 
-- `demo_site\index.html`: upload/select a video, run YOLOv8n detection or YOLO11n-Seg mask tracking directly in the browser, and view benchmark evidence.
+- `demo_site\index.html`: upload/select a video, run YOLOv8n detection or the sports-player YOLO11n-Seg student directly in the browser, and view benchmark evidence.
 - `media\models\yolov8n_480_nms.onnx`: 12.2 MB browser-side detector export.
-- `media\models\yolo11n_seg_320.onnx`: 11.1 MB browser-side segmentation export for sharper local mask overlay generation.
+- `media\models\yolo11n_sports_student_320.onnx`: 10.9 MB ROI-distilled browser-side sports-player segmentation export for local mask overlay generation.
 - `scripts\serve_demo.py`: local/demo server with upload and CPU-preview endpoints.
 - `Dockerfile` and `fly.toml`: Fly.io deployment target.
 
-The product demo path is client-side: sample and uploaded video frames stay in the browser, masks are generated from ONNX inference, and overlays are painted locally. Offline EdgeTAM/SAM-style runs are now treated as teacher/benchmark infrastructure, not as replayed demo output. See `docs\CLIENT_SIDE_ML_ROADMAP.md` for the next ML work: sports-specific distillation, temporal mask refinement, and browser runtime optimization.
+The product demo path is client-side: sample and uploaded video frames stay in the browser, masks are generated from ONNX inference, and overlays are painted locally. Offline EdgeTAM/SAM-style runs are now treated as teacher/benchmark infrastructure, not as replayed demo output. See `docs\BROWSER_STUDENT_DISTILLATION.md` for the student-model literature review, training setup, and benchmark results.
 
 Run locally:
 

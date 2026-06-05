@@ -2,14 +2,14 @@
 
 The public demo should not depend on pre-rendered mask videos. The current browser path proves the system boundary: frames stay local, YOLO-Seg ONNX runs in the browser, masks are decoded in JavaScript, IDs are associated over time, and overlays are painted on a canvas.
 
-The remaining gap is mask quality. Generic YOLO11n-Seg at 320 input is fast enough to be interactive, but its masks are coarse on small basketball players and it misses/over-selects in crowded frames. The ML work is to build a sports-specific browser student rather than relying on the generic COCO segmentation head.
+The first browser student is now trained and exported. Generic YOLO11n-Seg at 320 input was fast enough to be interactive, but its masks were coarse on small basketball players and it missed or over-selected in crowded frames. The current product model is a one-class sports-player YOLO11n-Seg student distilled from ROI-filtered teacher masks; see `docs/BROWSER_STUDENT_DISTILLATION.md` for results.
 
 ## Target
 
 - Client-side mask tracking on uploaded or sample sports video.
 - No replayed mask videos in the product demo.
 - 8-12 processed mask frames per second on a modern laptop browser.
-- Cleaner player masks than generic YOLO11n-Seg 320 at the same or lower runtime.
+- Cleaner player masks than generic YOLO11n-Seg 320 at comparable runtime.
 - Stable IDs through ordinary cuts, occlusions, and camera motion.
 
 ## Approach
