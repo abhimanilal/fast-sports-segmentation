@@ -5,6 +5,12 @@ const demoAssets = {
     poster: "/media/rec_league_poster.jpg",
     rawTitle: "Raw rec-league clip",
     maskTitle: "On-court YOLO-Seg tracking",
+    roi: [
+      [0, 360],
+      [640, 360],
+      [430, 170],
+      [160, 170],
+    ],
     note: "Rec-league sample loaded. The Masks toggle is pre-rendered; Track masks in browser generates YOLO-Seg overlays locally.",
   },
   pickup5v5: {
@@ -35,7 +41,7 @@ const state = {
   seedPrompt: "basketball players on court",
   yoloSession: null,
   segSession: null,
-  segInputSize: 256,
+  segInputSize: 320,
   segBackend: "CPU/WASM",
   browserTracking: false,
   browserTrackHandle: null,
@@ -319,7 +325,38 @@ function nmsDetections(detections, limit = 10, threshold = 0.55) {
   return kept;
 }
 
-function decodeSegDetections(detOutput, protoOutput, transform, width, height, minConf = 0.4) {
+function pointInPolygon(point, polygon) {
+  if (!polygon || polygon.length < 3) return true;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i][0];
+    const yi = polygon[i][1];
+    const xj = polygon[j][0];
+    const yj = polygon[j][1];
+    const intersects = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / Math.max(1e-6, yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function activeRoiForFrame(width, height) {
+  if (state.source !== "sample") return null;
+  const roi = currentDemo().roi;
+  if (!roi) return null;
+  return roi.map(([x, y]) => [(x / 640) * width, (y / 360) * height]);
+}
+
+function filterSegDetections(detections, width, height) {
+  const roi = activeRoiForFrame(width, height);
+  return detections.filter((det) => {
+    const areaFrac = boxArea(det) / Math.max(1, width * height);
+    if (areaFrac < 0.002 || areaFrac > 0.22) return false;
+    const foot = { x: (det.x1 + det.x2) / 2, y: det.y2 };
+    return pointInPolygon(foot, roi);
+  });
+}
+
+function decodeSegDetections(detOutput, protoOutput, transform, width, height, minConf = 0.5) {
   const data = detOutput.data;
   const dims = detOutput.dims;
   const channels = dims[1];
@@ -344,7 +381,7 @@ function decodeSegDetections(detOutput, protoOutput, transform, width, height, m
     }
     detections.push({ x1, y1, x2, y2, score, coeffs });
   }
-  return nmsDetections(detections, 10, 0.55).map((det) => ({
+  return filterSegDetections(nmsDetections(detections, 10, 0.55), width, height).map((det) => ({
     ...det,
     mask: decodeSegMask(det, protoOutput, transform, width, height),
   }));
@@ -412,11 +449,10 @@ function associateBrowserTracks(detections, width, height) {
 
 function drawBrowserOverlay(video, detections, elapsed) {
   const canvas = byId("browser-canvas");
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const ctx = canvas.getContext("2d");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const palette = [
     [105, 209, 111],
     [111, 191, 224],
@@ -425,17 +461,27 @@ function drawBrowserOverlay(video, detections, elapsed) {
     [172, 140, 232],
     [62, 204, 184],
   ];
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = canvas.width;
+  maskCanvas.height = canvas.height;
+  const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+  const maskImage = maskCtx.createImageData(canvas.width, canvas.height);
   detections.forEach((det) => {
     const color = palette[det.id % palette.length];
     for (let i = 0; i < det.mask.length; i += 1) {
       if (!det.mask[i]) continue;
       const px = i * 4;
-      image.data[px] = Math.round(image.data[px] * 0.56 + color[0] * 0.44);
-      image.data[px + 1] = Math.round(image.data[px + 1] * 0.56 + color[1] * 0.44);
-      image.data[px + 2] = Math.round(image.data[px + 2] * 0.56 + color[2] * 0.44);
+      maskImage.data[px] = color[0];
+      maskImage.data[px + 1] = color[1];
+      maskImage.data[px + 2] = color[2];
+      maskImage.data[px + 3] = 92;
     }
   });
-  ctx.putImageData(image, 0, 0);
+  maskCtx.putImageData(maskImage, 0, 0);
+  ctx.save();
+  ctx.filter = "blur(2px)";
+  ctx.drawImage(maskCanvas, 0, 0);
+  ctx.restore();
   ctx.lineWidth = Math.max(2, canvas.width / 360);
   ctx.font = `${Math.max(14, canvas.width / 44)}px ui-sans-serif`;
   detections.forEach((det) => {
@@ -457,13 +503,13 @@ async function getSegSession() {
     setRunState("Loading masks");
     ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
     try {
-      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_256.onnx", {
+      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_320.onnx", {
         executionProviders: ["webgpu", "wasm"],
         graphOptimizationLevel: "all",
       });
       state.segBackend = navigator.gpu ? "WebGPU/WASM" : "CPU/WASM";
     } catch {
-      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_256.onnx", {
+      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_320.onnx", {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });
