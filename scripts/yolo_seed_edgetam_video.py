@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,16 @@ from typing import Any
 import cv2
 import numpy as np
 import torch
+from PIL import Image
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from track_segment_video import (  # noqa: E402
+    LocateAnythingDetector,
+    resolve_dtype as resolve_model_dtype,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,9 +35,20 @@ def parse_args() -> argparse.Namespace:
         default=Path("vendor/EdgeTAM/checkpoints/edgetam.pt"),
     )
     parser.add_argument("--edgetam-config", default="configs/edgetam.yaml")
+    parser.add_argument("--seed-detector", choices=["yolo", "locate"], default="yolo")
     parser.add_argument("--yolo-model", default="yolo26n.pt")
     parser.add_argument("--yolo-conf", type=float, default=0.25)
     parser.add_argument("--yolo-imgsz", type=int, default=480)
+    parser.add_argument("--locate-model", default="nvidia/LocateAnything-3B")
+    parser.add_argument("--locate-device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--locate-dtype", choices=["fp32", "fp16", "bf16"], default="bf16")
+    parser.add_argument("--locate-load-in-8bit", action="store_true")
+    parser.add_argument("--locate-max-gpu-memory", default="5200MiB")
+    parser.add_argument("--locate-max-cpu-memory", default="8GiB")
+    parser.add_argument("--locate-offload-folder", default="E:/HFOffload/LocateAnything8bit")
+    parser.add_argument("--categories", nargs="+", default=["basketball player"])
+    parser.add_argument("--generation-mode", default="fast", choices=["fast", "hybrid", "slow"])
+    parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--max-objects", type=int, default=6)
     parser.add_argument("--min-box-area-frac", type=float, default=0.0015)
     parser.add_argument("--max-box-area-frac", type=float, default=0.22)
@@ -172,6 +194,78 @@ def detect_seed_boxes(
     return kept, stats
 
 
+def filter_seed_boxes(
+    boxes: list[list[float]],
+    frame_bgr: np.ndarray,
+    max_objects: int,
+    min_area_frac: float,
+    max_area_frac: float,
+    min_side: float,
+    max_aspect: float,
+    edge_margin_frac: float,
+    reject_edge: bool,
+) -> tuple[list[list[float]], dict[str, int]]:
+    height, width = frame_bgr.shape[:2]
+    kept_with_area: list[tuple[float, list[float]]] = []
+    stats = {"raw": len(boxes), "class": len(boxes), "filtered": 0, "kept": 0}
+    for box in boxes:
+        candidate = [float(v) for v in box]
+        if not is_usable_box(
+            candidate,
+            width,
+            height,
+            min_area_frac,
+            max_area_frac,
+            min_side,
+            max_aspect,
+            edge_margin_frac,
+            reject_edge,
+        ):
+            stats["filtered"] += 1
+            continue
+        x1, y1, x2, y2 = candidate
+        kept_with_area.append((max(0.0, x2 - x1) * max(0.0, y2 - y1), candidate))
+    kept_with_area.sort(key=lambda item: item[0], reverse=True)
+    kept = [box for _, box in kept_with_area[:max_objects]]
+    stats["kept"] = len(kept)
+    return kept, stats
+
+
+def locate_seed_boxes(
+    frame_bgr: np.ndarray,
+    args: argparse.Namespace,
+) -> tuple[list[list[float]], dict[str, int], str]:
+    locate_dtype = resolve_model_dtype(args.locate_dtype, args.locate_device)
+    detector = LocateAnythingDetector(
+        args.locate_model,
+        args.locate_device,
+        locate_dtype,
+        args.locate_load_in_8bit,
+        args.locate_max_gpu_memory,
+        args.locate_max_cpu_memory,
+        args.locate_offload_folder,
+    )
+    image = Image.fromarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+    answer, boxes = detector.detect(
+        image,
+        args.categories,
+        args.generation_mode,
+        args.max_new_tokens,
+    )
+    kept, stats = filter_seed_boxes(
+        boxes,
+        frame_bgr,
+        args.max_objects,
+        args.min_box_area_frac,
+        args.max_box_area_frac,
+        args.min_box_side,
+        args.max_box_aspect,
+        args.edge_margin_frac,
+        args.reject_edge_seeds,
+    )
+    return kept, stats, answer
+
+
 def mask_to_box(mask: np.ndarray) -> list[float] | None:
     ys, xs = np.nonzero(mask)
     if xs.size == 0 or ys.size == 0:
@@ -218,23 +312,27 @@ def main() -> None:
     frames_dir = args.output_dir / "edgetam_frames"
 
     frames, source_fps = extract_frames(args.video, frames_dir, args.max_frames, args.max_side)
-    seed_boxes, seed_filter_stats = detect_seed_boxes(
-        frames[0],
-        args.yolo_model,
-        args.yolo_conf,
-        args.yolo_imgsz,
-        args.max_objects,
-        args.min_box_area_frac,
-        args.max_box_area_frac,
-        args.min_box_side,
-        args.max_box_aspect,
-        args.edge_margin_frac,
-        args.reject_edge_seeds,
-    )
+    seed_start = time.perf_counter()
+    seed_answer = None
+    if args.seed_detector == "yolo":
+        seed_boxes, seed_filter_stats = detect_seed_boxes(
+            frames[0],
+            args.yolo_model,
+            args.yolo_conf,
+            args.yolo_imgsz,
+            args.max_objects,
+            args.min_box_area_frac,
+            args.max_box_area_frac,
+            args.min_box_side,
+            args.max_box_aspect,
+            args.edge_margin_frac,
+            args.reject_edge_seeds,
+        )
+    else:
+        seed_boxes, seed_filter_stats, seed_answer = locate_seed_boxes(frames[0], args)
+    seed_seconds = time.perf_counter() - seed_start
     if not seed_boxes:
-        raise RuntimeError("YOLO found no person boxes on the first extracted frame")
-
-    import sys
+        raise RuntimeError(f"{args.seed_detector} found no usable seed boxes on the first extracted frame")
 
     edge_root = args.edgetam_root.resolve()
     if str(edge_root) not in sys.path:
@@ -257,7 +355,12 @@ def main() -> None:
         "frames": [],
         "seed_boxes": seed_boxes,
         "seed_filter_stats": seed_filter_stats,
+        "seed_detector": args.seed_detector,
+        "seed_seconds": seed_seconds,
+        "seed_answer": seed_answer,
         "yolo_model": args.yolo_model,
+        "locate_model": args.locate_model if args.seed_detector == "locate" else None,
+        "categories": args.categories if args.seed_detector == "locate" else None,
         "edgetam_checkpoint": str(args.edgetam_checkpoint),
         "build_seconds": build_seconds,
         "dtype": args.dtype,
