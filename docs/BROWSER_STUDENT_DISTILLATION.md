@@ -40,6 +40,35 @@ All rows below validate on the same 88-frame ROI-filtered teacher-label validati
 
 The ROI-distilled student is the only candidate that improves over the generic browser model on both mask agreement and box agreement.
 
+## SA-V Sports-Court Shard
+
+A broad SA-V tiny-shard fine-tune was not representative enough for basketball. To avoid hand labels, the repo now includes a semantic selector that searches SA-V Subset 51 for court/sports-like videos:
+
+```powershell
+.venv\Scripts\python.exe scripts\select_sav_sports_shard.py --max-candidates 160 --top-k 16 --output-dir data\raw\sav_sports_candidates_160
+.venv\Scripts\python.exe scripts\export_sav_selected_shard.py --selected-ids examples\sav_sports_court_selected_ids.txt --output-dir data\raw\sav_sports_court_shard
+```
+
+The selected high-confidence IDs are:
+
+- `sav_051321`: indoor basketball court
+- `sav_051575`: indoor court/gym scene
+- `sav_051926`: outdoor tennis court
+- `sav_051828`: outdoor tennis/court scene
+
+This produced 314 annotated SA-V frames and 1,689 exported YOLO-format mask instances. The labels are real SA-V manual masklets, not YOLO pseudo-labels.
+
+Validation on the 90-frame SA-V sports-court holdout:
+
+| Model | Mask mAP50 | Mask mAP50-95 | Box mAP50 | Box mAP50-95 |
+| --- | ---: | ---: | ---: | ---: |
+| Generic YOLO11n-Seg 320 | 0.071 | 0.033 | 0.269 | 0.211 |
+| Current ROI-distilled sports student | 0.118 | 0.035 | 0.282 | 0.144 |
+| SA-V-court-only quick student | 0.094 | 0.042 | 0.217 | 0.120 |
+| ROI student then SA-V-court fine-tune | 0.105 | 0.036 | 0.240 | 0.130 |
+
+The current deployed model remains the best browser candidate from this comparison. The useful next step is to use the SA-V sports-court shard as an auxiliary/temporal validation set, not to replace the sports-domain student with a tiny SA-V-only fine-tune.
+
 ## Visual Review
 
 Accepted improvements:
