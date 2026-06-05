@@ -1,0 +1,54 @@
+{
+  "project": "Fast Sports Segmentation",
+  "positioning": "Realtime sports-video segmentation and analytics using YOLO/LocateAnything seeding, EdgeTAM mask propagation, and court-space analytics.",
+  "sports_realtime": {
+    "frames": 150,
+    "fps": 96.13,
+    "p50_ms": 6.24,
+    "p95_ms": 25.77,
+    "active_frame_pct": 100.0,
+    "avg_tracks": 8.07
+  },
+  "analytics": {
+    "frames": 150,
+    "rows": 1210,
+    "track_count": 14,
+    "long_tracks_60_plus": 10,
+    "court_units": "meters"
+  },
+  "sav_comparison": [
+    {
+      "name": "EdgeTAM oracle boxes",
+      "mean_mask_iou": 0.816,
+      "mask_j_at_50": 0.911,
+      "mean_box_iou": 0.803,
+      "fps": 10.86,
+      "cadence": "video memory every frame"
+    },
+    {
+      "name": "EfficientSAM sparse refresh 5",
+      "mean_mask_iou": 0.211,
+      "mask_j_at_50": 0.185,
+      "mean_box_iou": 0.282,
+      "fps": 32.91,
+      "cadence": "SAM every 5 frames"
+    },
+    {
+      "name": "EfficientSAM sparse refresh 30",
+      "mean_mask_iou": 0.401,
+      "mask_j_at_50": 0.455,
+      "mean_box_iou": 0.301,
+      "fps": 48.98,
+      "cadence": "SAM every 30 frames"
+    }
+  ],
+  "demo": {
+    "output_video": "media/sports_segmentation_demo_15s.mp4",
+    "frames": 450,
+    "fps": 29.97,
+    "duration_seconds": 15.015,
+    "canvas_width": 2340,
+    "canvas_height": 540
+  },
+  "public_demo_video": "media/sports_segmentation_demo_15s.mp4"
+}

@@ -4,6 +4,32 @@ Resume-ready sports-video segmentation and analytics pipeline centered on YOLO/L
 
 The current project positioning and measured claims are summarized in `PORTFOLIO.md`.
 
+## Live Demo Site
+
+This repo now includes a deployable browser demo:
+
+- `demo_site\index.html`: upload/select a video, run YOLOv8n ONNX directly in the browser, and view benchmark evidence.
+- `media\models\yolov8n_480_nms.onnx`: 12.2 MB browser-side detector export.
+- `scripts\serve_demo.py`: local/demo server with upload and CPU-preview endpoints.
+- `Dockerfile` and `fly.toml`: Fly.io deployment target.
+
+Run locally:
+
+```powershell
+.venv\Scripts\python.exe scripts\serve_demo.py 8765
+```
+
+Open `http://127.0.0.1:8765`.
+
+Deploy:
+
+```powershell
+fly launch --no-deploy
+fly deploy
+```
+
+See `docs\DEPLOYMENT.md` for the public-vs-local mode split. The deployed site is CPU-safe: browser ONNX handles live uploaded-video detection, while the full EdgeTAM/SAM and CUDA benchmarks remain reproducible locally.
+
 Regenerate the portfolio report from saved benchmark artifacts:
 
 ```powershell

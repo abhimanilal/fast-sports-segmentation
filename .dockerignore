@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+data
+models
+outputs
+vendor
+*.pt
+*.onnx
+!media/models/*.onnx

@@ -4,7 +4,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 data/raw/
+data/uploads/
 models/
+!media/models/
+!media/models/*.onnx
 outputs/
 vendor/
 *.pt
