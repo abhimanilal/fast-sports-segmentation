@@ -69,5 +69,6 @@ Interpretation: EdgeTAM is the accuracy winner by a wide margin. EfficientSAM3 i
 ## Next Work
 
 - Add ByteTrack/DeepSORT-grade identity association for crowded sports footage.
+- Make detector accuracy first-class for YOLOv8n vs YOLO26n with labeled sports-frame precision/recall or mAP, missed-player counts, and false-positive counts.
 - Add periodic EdgeTAM correction prompts from YOLO when players enter or occlude.
 - Expand SA-V evaluation from 3 videos to 25-50 videos with confidence intervals.

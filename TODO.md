@@ -32,6 +32,7 @@ Stretch target:
 ## Immediate TODOs
 
 - Add benchmark fixtures for all five informal basketball clips.
+- Make detector accuracy a first-class metric for YOLOv8n vs YOLO26n selection: report precision/recall or mAP on labeled sports frames, plus missed-player and false-positive counts on the informal basketball clips.
 - Pin the LocateAnything remote-code revision to avoid surprise Hugging Face code updates.
 - Add CI-light tests for box filtering, NMS, and metrics parsing.
 - Add multi-object identity quality metrics, not just speed metrics.
@@ -39,7 +40,7 @@ Stretch target:
 - Add court-zone occupancy summaries on top of the current court-coordinate export.
 - Add periodic EdgeTAM correction/reseed support, not only frame-0 YOLO seeds.
 - Benchmark EdgeTAM with one to three objects separately from full-team tracking.
-- Try TensorRT/ONNX exports for YOLOv8n and YOLO26n before replacing the current detector.
+- Try TensorRT/ONNX exports for YOLOv8n and YOLO26n, but only replace the current detector after latency and detector-accuracy comparisons both pass.
 - Expand SA-V benchmark from 3 videos to 25-50 videos and report confidence intervals.
 
 ## Done

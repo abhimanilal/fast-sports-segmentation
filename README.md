@@ -383,7 +383,9 @@ Ultralytics' current newer local model line is YOLO26, not YOLO28. The existing 
   --write-video
 ```
 
-Local benchmark result: YOLO26n works, but did not beat YOLOv8n in this pipeline on the RTX 3070. At 480 detector input it ran 79.86 FPS with p95 41.98 ms; at 416 input it ran 85.27 FPS with p95 50.40 ms. The previous YOLOv8n 480 persistent-ID run remains the best realtime profile measured here: 96.13 FPS with p95 25.73 ms.
+Local latency benchmark result: YOLO26n works, but did not beat YOLOv8n in this pipeline on the RTX 3070. At 480 detector input it ran 79.86 FPS with p95 41.98 ms; at 416 input it ran 85.27 FPS with p95 50.40 ms. The previous YOLOv8n 480 persistent-ID run remains the best realtime profile measured here: 96.13 FPS with p95 25.73 ms.
+
+Detector choice is not final on latency alone. The next detector benchmark must make accuracy first-class: label representative basketball frames and report precision/recall or mAP, missed-player counts, false-positive counts, and downstream track coverage for YOLOv8n versus YOLO26n. The browser ONNX demo currently uses YOLOv8n because it is the fastest measured path and exports cleanly; it should be swapped only if YOLO26n wins on both accuracy and deployable latency.
 
 ## YOLO -> EdgeTAM
 
