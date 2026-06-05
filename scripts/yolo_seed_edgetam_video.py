@@ -56,6 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-box-aspect", type=float, default=5.0)
     parser.add_argument("--edge-margin-frac", type=float, default=0.01)
     parser.add_argument("--reject-edge-seeds", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--max-frames", type=int, default=90)
     parser.add_argument("--max-side", type=int, default=512)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -84,7 +85,13 @@ def resize_max_side(frame: np.ndarray, max_side: int) -> np.ndarray:
     return cv2.resize(frame, (int(round(width * scale)), int(round(height * scale))))
 
 
-def extract_frames(video: Path, frames_dir: Path, max_frames: int, max_side: int) -> tuple[list[np.ndarray], float]:
+def extract_frames(
+    video: Path,
+    frames_dir: Path,
+    start_frame: int,
+    max_frames: int,
+    max_side: int,
+) -> tuple[list[np.ndarray], float]:
     frames_dir.mkdir(parents=True, exist_ok=True)
     for old_frame in frames_dir.glob("*.jpg"):
         old_frame.unlink()
@@ -93,6 +100,8 @@ def extract_frames(video: Path, frames_dir: Path, max_frames: int, max_side: int
     if not cap.isOpened():
         raise RuntimeError(f"Could not open {video}")
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+    if start_frame > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frames: list[np.ndarray] = []
     while len(frames) < max_frames:
         ok, frame_bgr = cap.read()
@@ -311,7 +320,9 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     frames_dir = args.output_dir / "edgetam_frames"
 
-    frames, source_fps = extract_frames(args.video, frames_dir, args.max_frames, args.max_side)
+    frames, source_fps = extract_frames(
+        args.video, frames_dir, args.start_frame, args.max_frames, args.max_side
+    )
     seed_start = time.perf_counter()
     seed_answer = None
     if args.seed_detector == "yolo":
@@ -351,6 +362,7 @@ def main() -> None:
 
     metrics: dict[str, Any] = {
         "video": str(args.video),
+        "start_frame": args.start_frame,
         "source_fps": source_fps,
         "frames": [],
         "seed_boxes": seed_boxes,

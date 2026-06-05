@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs/portfolio_report/summary.json"),
     )
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/portfolio_demo"))
+    parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--max-frames", type=int, default=60)
     parser.add_argument("--max-side", type=int, default=512)
     parser.add_argument("--output-height", type=int, default=540)
@@ -175,6 +176,8 @@ def main() -> None:
     if not mask_cap.isOpened():
         raise RuntimeError(f"Could not open mask video {args.mask_video}")
 
+    if args.start_frame > 0:
+        raw_cap.set(cv2.CAP_PROP_POS_FRAMES, args.start_frame)
     ok_raw, raw = raw_cap.read()
     ok_mask, mask = mask_cap.read()
     if not ok_raw or not ok_mask:
@@ -202,7 +205,7 @@ def main() -> None:
         raise RuntimeError(f"Could not open video writer for {output_video} at {canvas_size}")
 
     frame_idx = 0
-    raw_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    raw_cap.set(cv2.CAP_PROP_POS_FRAMES, args.start_frame)
     mask_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     snapshots = {0, max(0, args.max_frames // 2), max(0, args.max_frames - 1)}
     while frame_idx < args.max_frames:
@@ -241,6 +244,7 @@ def main() -> None:
         "fps": args.fps,
         "canvas_width": canvas_size[0],
         "canvas_height": canvas_size[1],
+        "start_frame": args.start_frame,
         "snapshots": sorted(snapshots),
         "source_raw": str(args.raw_video),
         "source_mask": str(args.mask_video),

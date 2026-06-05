@@ -31,8 +31,8 @@ Analytics export:
 
 ## Polished Demo Artifact
 
-- Video: `outputs\portfolio_demo\sports_segmentation_demo.mp4`
-- Frames: `60`
+- Video: `outputs\portfolio_demo_15s\sports_segmentation_demo_15s.mp4`
+- Frames: `450`
 - Resolution: `2340x540`
 
 ## Seed Detector Comparison
@@ -70,4 +70,3 @@ Interpretation: EdgeTAM is the accuracy winner by a wide margin. EfficientSAM3 i
 - Add ByteTrack/DeepSORT-grade identity association for crowded sports footage.
 - Add periodic EdgeTAM correction prompts from YOLO when players enter or occlude.
 - Expand SA-V evaluation from 3 videos to 25-50 videos with confidence intervals.
-- Extend the polished demo to 15-30 seconds with periodic reseeds and richer court analytics.

@@ -28,6 +28,12 @@ Export the polished side-by-side demo clip:
 
 Validated demo artifact:
 
+- `outputs\portfolio_demo_15s\sports_segmentation_demo_15s.mp4`
+- 450 frames, 15.015 seconds, 29.97 FPS, 2340x540
+- built from three 150-frame YOLO-seeded EdgeTAM chunks to keep EdgeTAM video state memory bounded
+
+Quick smoke demo artifact:
+
 - `outputs\portfolio_demo\sports_segmentation_demo.mp4`
 - 60 frames, 29.97 FPS, 2340x540
 - side-by-side raw clip, EdgeTAM mask propagation, and metrics panel

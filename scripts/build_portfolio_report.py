@@ -40,6 +40,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--demo-summary",
         type=Path,
+        default=Path("outputs/portfolio_demo_15s/demo_summary.json"),
+    )
+    parser.add_argument(
+        "--fallback-demo-summary",
+        type=Path,
         default=Path("outputs/portfolio_demo/demo_summary.json"),
     )
     return parser.parse_args()
@@ -48,7 +53,7 @@ def parse_args() -> argparse.Namespace:
 def read_json(path: Path) -> Any:
     if not path.exists():
         raise FileNotFoundError(f"Missing required report input: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def percentile(values: list[float], pct: float) -> float:
@@ -111,7 +116,8 @@ def main() -> None:
     locate_seed = summarize_seed(read_json(args.sports_locate))
     realtime = summarize_realtime(read_json(args.realtime_summary))
     analytics = read_json(args.analytics_summary)
-    demo = read_json(args.demo_summary) if args.demo_summary.exists() else None
+    demo_path = args.demo_summary if args.demo_summary.exists() else args.fallback_demo_summary
+    demo = read_json(demo_path) if demo_path.exists() else None
 
     long_tracks = sum(1 for track in analytics.get("tracks", {}).values() if int(track.get("frames", 0)) >= 60)
     report = {
@@ -244,7 +250,6 @@ Interpretation: EdgeTAM is the accuracy winner by a wide margin. EfficientSAM3 i
 - Add ByteTrack/DeepSORT-grade identity association for crowded sports footage.
 - Add periodic EdgeTAM correction prompts from YOLO when players enter or occlude.
 - Expand SA-V evaluation from 3 videos to 25-50 videos with confidence intervals.
-- Extend the polished demo to 15-30 seconds with periodic reseeds and richer court analytics.
 """
     args.output_md.write_text(md, encoding="utf-8")
     print(f"wrote {args.output_md} and {args.output_json}")

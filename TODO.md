@@ -31,7 +31,6 @@ Stretch target:
 
 ## Immediate TODOs
 
-- Extend the polished demo to 15-30 seconds with periodic reseeds and richer court-space metrics.
 - Add benchmark fixtures for all five informal basketball clips.
 - Pin the LocateAnything remote-code revision to avoid surprise Hugging Face code updates.
 - Add CI-light tests for box filtering, NMS, and metrics parsing.
@@ -68,3 +67,4 @@ Stretch target:
 - Measured EfficientSAM on the same 3-video SA-V shard: SAM every 5 frames reached 32.91 FPS with 0.211 refresh-frame mask IoU; SAM every 30 frames reached 48.98 FPS with 0.401 refresh-frame mask IoU.
 - Added a portfolio report generator and tracked `PORTFOLIO.md` with resume positioning, sports realtime metrics, seed-detector tradeoffs, and SA-V accuracy comparison.
 - Added a polished side-by-side portfolio demo exporter and validated a 60-frame 2340x540 demo clip.
+- Added start-frame aligned YOLO-seeded EdgeTAM chunks and validated a 450-frame, 15.015-second, 2340x540 portfolio demo clip.
