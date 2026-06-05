@@ -43,6 +43,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template-update", type=float, default=0.08)
     parser.add_argument("--mask-update-threshold", type=float, default=0.55)
     parser.add_argument("--mask-box-pad-frac", type=float, default=0.08)
+    parser.add_argument("--yolo-every", type=int, default=0)
+    parser.add_argument("--yolo-model", default="yolov8n.pt")
+    parser.add_argument("--yolo-device", default="0" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--yolo-conf", type=float, default=0.25)
+    parser.add_argument("--yolo-imgsz", type=int, default=640)
+    parser.add_argument("--sam-on-yolo", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--locate-every", type=int, default=0)
     parser.add_argument("--locate-model", default="nvidia/LocateAnything-3B")
     parser.add_argument("--locate-device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -76,6 +82,10 @@ def parse_args() -> argparse.Namespace:
         choices=["fp16", "bf16", "fp32"],
     )
     parser.add_argument("--write-video", action="store_true")
+    parser.add_argument("--write-frames", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--render-overlays", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--print-metrics", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--allow-empty-tracks", action="store_true")
     return parser.parse_args()
 
 
@@ -112,6 +122,18 @@ def load_boxes(path: Path | None) -> dict[int, list[list[float]]]:
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
     return {int(frame): boxes for frame, boxes in raw.items()}
+
+
+def resolve_input_boxes(boxes: list[list[float]], width: int, height: int) -> list[list[float]]:
+    if not boxes:
+        return []
+    flat = [coord for box in boxes for coord in box]
+    if flat and min(flat) >= 0.0 and max(flat) <= 1.0:
+        return [
+            [box[0] * width, box[1] * height, box[2] * width, box[3] * height]
+            for box in boxes
+        ]
+    return boxes
 
 
 def parse_locate_boxes(answer: str, width: int, height: int) -> list[list[float]]:
@@ -363,6 +385,35 @@ class LocateAnythingDetector:
         return answer, parse_locate_boxes(answer, image.width, image.height)
 
 
+class YoloPersonDetector:
+    def __init__(self, model_name: str, device: str, conf: float, imgsz: int):
+        from ultralytics import YOLO
+
+        self.model = YOLO(model_name)
+        self.device = device
+        self.conf = conf
+        self.imgsz = imgsz
+
+    def detect(self, frame_rgb: np.ndarray) -> list[list[float]]:
+        results = self.model.predict(
+            frame_rgb,
+            classes=[0],
+            conf=self.conf,
+            imgsz=self.imgsz,
+            device=self.device,
+            verbose=False,
+        )
+        boxes: list[list[float]] = []
+        if not results:
+            return boxes
+        result = results[0]
+        if result.boxes is None:
+            return boxes
+        for xyxy in result.boxes.xyxy.detach().cpu().numpy():
+            boxes.append([float(value) for value in xyxy])
+        return boxes
+
+
 def clip_box(box: np.ndarray, width: int, height: int) -> np.ndarray:
     x1, y1, x2, y2 = box.astype(float)
     return np.asarray(
@@ -576,6 +627,11 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype, args.device)
     locate_dtype = resolve_dtype(args.locate_dtype, args.locate_device)
     boxes_by_frame = load_boxes(args.boxes_json)
+    yolo_detector = (
+        YoloPersonDetector(args.yolo_model, args.yolo_device, args.yolo_conf, args.yolo_imgsz)
+        if args.yolo_every > 0
+        else None
+    )
     detector = (
         LocateAnythingDetector(
             args.locate_model,
@@ -614,21 +670,29 @@ def main() -> None:
         "video": str(args.video),
         "sam_checkpoint": str(args.sam_checkpoint),
         "dtype": str(dtype).replace("torch.", ""),
+        "yolo_every": args.yolo_every,
+        "yolo_model": args.yolo_model,
         "locate_every": args.locate_every,
         "locate_dtype": str(locate_dtype).replace("torch.", ""),
         "categories": args.categories,
+        "source_fps": source_fps,
         "frames": [],
     }
 
     for local_idx in range(args.max_frames):
+        frame_start = time.perf_counter()
         frame_idx = args.start_frame + local_idx
+        read_start = time.perf_counter()
         ok, frame_bgr = cap.read()
         if not ok:
             break
+        read_seconds = time.perf_counter() - read_start
+        preprocess_start = time.perf_counter()
         frame_rgb, scale = resize_rgb(frame_bgr, args.max_side)
         image = Image.fromarray(frame_rgb)
         gray = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
         h, w = gray.shape
+        preprocess_seconds = time.perf_counter() - preprocess_start
 
         detection_source = None
         detection_answer = None
@@ -636,9 +700,13 @@ def main() -> None:
         admitted_track_ids = None
         track_prune_stats = None
         locate_seconds = 0.0
+        track_seconds = 0.0
+        detection_seconds = 0.0
         if frame_idx in boxes_by_frame:
+            detection_start = time.perf_counter()
+            input_boxes = resolve_input_boxes(boxes_by_frame[frame_idx], w, h)
             filtered_boxes, box_filter_stats = filter_detected_boxes(
-                boxes_by_frame[frame_idx],
+                input_boxes,
                 w,
                 h,
                 args.max_detections,
@@ -652,6 +720,34 @@ def main() -> None:
             )
             tracks = init_tracks(gray, filtered_boxes, w, h)
             detection_source = "boxes-json"
+            detection_seconds = time.perf_counter() - detection_start
+        elif yolo_detector is not None and (
+            local_idx == 0 or local_idx % args.yolo_every == 0 or not tracks
+        ):
+            detection_start = time.perf_counter()
+            detected_boxes = yolo_detector.detect(frame_rgb)
+            filtered_boxes, box_filter_stats = filter_detected_boxes(
+                detected_boxes,
+                w,
+                h,
+                args.max_detections,
+                args.box_nms_iou,
+                args.min_box_area_frac,
+                args.max_box_area_frac,
+                args.min_box_side,
+                args.min_box_aspect,
+                args.max_box_aspect,
+                args.edge_margin_frac,
+            )
+            if filtered_boxes:
+                tracks = init_tracks(gray, filtered_boxes, w, h)
+                detection_source = "yolo"
+            elif not tracks and not args.allow_empty_tracks:
+                raise RuntimeError(
+                    f"YOLO found no usable person boxes on frame {frame_idx}; "
+                    "seed with --boxes-json or adjust --yolo-conf."
+                )
+            detection_seconds = time.perf_counter() - detection_start
         elif detector is not None and (
             local_idx == 0 or local_idx % args.locate_every == 0 or not tracks
         ):
@@ -660,6 +756,7 @@ def main() -> None:
                 image, args.categories, args.generation_mode, args.max_new_tokens
             )
             locate_seconds = time.perf_counter() - locate_start
+            detection_start = time.perf_counter()
             filtered_boxes, box_filter_stats = filter_detected_boxes(
                 detected_boxes,
                 w,
@@ -681,25 +778,32 @@ def main() -> None:
                     f"LocateAnything found no usable boxes on frame {frame_idx}; "
                     "seed with --boxes-json or adjust --categories."
                 )
+            detection_seconds = locate_seconds + (time.perf_counter() - detection_start)
         elif not tracks:
-            raise RuntimeError(f"No seed boxes available for frame {frame_idx}")
+            if not args.allow_empty_tracks:
+                raise RuntimeError(f"No seed boxes available for frame {frame_idx}")
         else:
+            track_start = time.perf_counter()
             for track in tracks:
                 update_track(gray, track, args.search_pad, args.template_update)
+            track_seconds = time.perf_counter() - track_start
 
         masks = None
         sam_scores: list[float] = []
         sam_seconds = 0.0
-        should_refresh_masks = local_idx % args.sam_every == 0 or detection_source in {
-            "locate-anything",
-            "boxes-json",
-        }
+        should_refresh_masks = (
+            local_idx % args.sam_every == 0
+            or detection_source in {"locate-anything", "boxes-json"}
+            or (detection_source == "yolo" and args.sam_on_yolo)
+        )
         if tracks and should_refresh_masks:
             boxes = np.asarray([track.box for track in tracks], dtype=np.float32)
             masks, scores, sam_seconds = sam_segment(
                 model, processor, image, boxes, args.device, dtype
             )
-            if detection_source in {"locate-anything", "boxes-json"}:
+            if detection_source in {"locate-anything", "boxes-json"} or (
+                detection_source == "yolo" and args.sam_on_yolo
+            ):
                 keep_indices = [
                     idx for idx, score in enumerate(scores) if float(score) >= args.admit_sam_threshold
                 ]
@@ -732,25 +836,44 @@ def main() -> None:
             )
             sam_scores = scores.astype(float).tolist()
 
-        vis = overlay(frame_rgb, tracks, masks)
-        frame_path = args.output_dir / f"frame_{frame_idx:05d}.jpg"
-        cv2.imwrite(str(frame_path), cv2.cvtColor(vis, cv2.COLOR_RGB2BGR))
+        render_start = time.perf_counter()
+        vis = overlay(frame_rgb, tracks, masks) if args.render_overlays else frame_rgb
+        render_seconds = time.perf_counter() - render_start
+
+        write_seconds = 0.0
+        frame_path = None
+        if args.write_frames:
+            write_start = time.perf_counter()
+            frame_path = args.output_dir / f"frame_{frame_idx:05d}.jpg"
+            cv2.imwrite(str(frame_path), cv2.cvtColor(vis, cv2.COLOR_RGB2BGR))
+            write_seconds += time.perf_counter() - write_start
 
         if args.write_video:
             if writer is None:
                 video_path = args.output_dir / "tracked.mp4"
                 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
                 writer = cv2.VideoWriter(str(video_path), fourcc, source_fps, (w, h))
+            write_start = time.perf_counter()
             writer.write(cv2.cvtColor(vis, cv2.COLOR_RGB2BGR))
+            write_seconds += time.perf_counter() - write_start
+
+        frame_seconds = time.perf_counter() - frame_start
 
         metrics["frames"].append(
             {
                 "frame": frame_idx,
-                "output": str(frame_path),
+                "output": str(frame_path) if frame_path is not None else None,
                 "boxes": [track.box.astype(float).tolist() for track in tracks],
                 "track_scores": [track.score for track in tracks],
                 "sam_scores": sam_scores,
                 "sam_seconds": sam_seconds,
+                "read_seconds": read_seconds,
+                "preprocess_seconds": preprocess_seconds,
+                "detection_seconds": detection_seconds,
+                "track_seconds": track_seconds,
+                "render_seconds": render_seconds,
+                "write_seconds": write_seconds,
+                "frame_seconds": frame_seconds,
                 "detection_source": detection_source,
                 "box_filter_stats": box_filter_stats,
                 "admitted_track_ids": admitted_track_ids,
@@ -767,7 +890,8 @@ def main() -> None:
         metrics["video_output"] = str(args.output_dir / "tracked.mp4")
     metrics_path = args.output_dir / "metrics.json"
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    print(json.dumps(metrics, indent=2))
+    if args.print_metrics:
+        print(json.dumps(metrics, indent=2))
 
 
 if __name__ == "__main__":

@@ -121,6 +121,12 @@ Optional LocateAnything detector dependencies:
 uv pip install --python .venv\Scripts\python.exe transformers==4.57.1 peft decord lmdb accelerate sentencepiece protobuf bitsandbytes
 ```
 
+Optional realtime detector dependency:
+
+```powershell
+uv pip install --python .venv\Scripts\python.exe ultralytics
+```
+
 ## Run
 
 ```powershell
@@ -194,13 +200,15 @@ FP16 reduces the live model memory footprint versus FP32. BF16 is also validated
 The tracking loop supports three sources of boxes:
 
 - `--boxes-json`: seed or correction boxes from a file.
+- `--yolo-every N`: run a lightweight YOLO person detector every `N` processed frames.
 - `--locate-every N`: run LocateAnything every `N` processed frames.
 - template matching: lightweight frame-to-frame box propagation between detector calls.
 
 The intended live loop is:
 
 ```text
-LocateAnything sparse boxes -> EfficientSAM3 box masks -> mask-refined boxes -> template tracking until next detection
+YOLO realtime boxes -> template tracking -> periodic EfficientSAM3 masks
+LocateAnything sparse semantic reseed -> EfficientSAM3 box masks -> template tracking until next detection
 ```
 
 Run with seed boxes only:
@@ -245,6 +253,76 @@ $env:TRANSFORMERS_CACHE="E:\HuggingFace\transformers"
 ```
 
 On an 8 GB RTX 3070, start with `--locate-every 30` or higher. If both models do not fit together, keep SAM on CUDA and run LocateAnything less frequently, or move the LocateAnything call to a separate process/service later.
+
+Run the realtime-oriented YOLO path:
+
+```powershell
+.venv\Scripts\python.exe scripts\track_segment_video.py `
+  --video data\raw\youtube\clips\rec_league_0008_45s.mp4 `
+  --sam-checkpoint models\efficient_sam3_efficientvit_s_point_prompt_slim.pt `
+  --output-dir outputs\track_youtube_rec_league_yolo_smoke `
+  --yolo-every 10 `
+  --yolo-model yolov8n.pt `
+  --yolo-conf 0.25 `
+  --yolo-imgsz 512 `
+  --no-sam-on-yolo `
+  --sam-every 30 `
+  --max-frames 150 `
+  --max-side 512 `
+  --device cuda `
+  --dtype bf16 `
+  --max-detections 8 `
+  --write-video
+```
+
+This keeps YOLO as the cheap realtime detector and lets SAM refresh masks on its own cadence. Use `--sam-on-yolo` when you want every detector reseed validated by SAM, but that is slower and misses the realtime frame budget on this host.
+
+## Benchmarks
+
+Realtime target for the inner loop:
+
+- 30 FPS or better after warmup
+- p95 frame time under 33 ms
+- 100% active-frame coverage on the benchmark clip
+- detector/reseed path kept separate from the expensive LocateAnything open-vocabulary path
+
+Benchmark command:
+
+```powershell
+.venv\Scripts\python.exe scripts\benchmark_tracking.py `
+  --detector yolo `
+  --frames 150 `
+  --warmup-frames 10 `
+  --max-sides 512 `
+  --sam-every 30 `
+  --yolo-every 10 `
+  --yolo-imgsz 512 `
+  --no-sam-on-yolo `
+  --dtype bf16 `
+  --device cuda `
+  --output-root outputs\benchmarks_realtime_yolo512
+```
+
+Validated on this host with `rec_league_0008_45s.mp4`:
+
+| Profile | FPS | p50 frame | p95 frame | Active frames | Avg tracks | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| YOLOv8n every 10, SAM every 30, 512 input, BF16 | 98.55 | 5.53 ms | 32.14 ms | 100% | 6.36 | Passes 30 FPS p95 target |
+
+SAM remains the expensive stage at about 69 ms average for refresh frames, so this is not a synchronous per-frame mask system. The viable realtime design is frequent cheap box detection/tracking plus sparse mask refresh, with LocateAnything reserved for async semantic recovery.
+
+## Analytics Export
+
+Export first-pass image-space analytics from a tracking metrics file:
+
+```powershell
+.venv\Scripts\python.exe scripts\export_tracking_analytics.py `
+  --metrics outputs\benchmarks_realtime_yolo512\side512_sam30\metrics.json `
+  --output-csv outputs\benchmarks_realtime_yolo512\side512_sam30\analytics.csv `
+  --summary-json outputs\benchmarks_realtime_yolo512\side512_sam30\analytics_summary.json
+```
+
+The CSV includes frame time, local track id, box center, box size, SAM score when available, detector source, and image-space speed. Speeds reset on detector reseed frames because the current tracker does not yet preserve identity across detections. That is the next required step before claiming player-level speed analytics.
 
 Current LocateAnything local status on this Windows host:
 
