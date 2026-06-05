@@ -2,8 +2,8 @@
 
 This repo has two demo modes:
 
-1. Public web demo for Fly.io: upload a clip, run YOLOv8n ONNX directly in the browser with ONNXRuntime Web, and optionally generate a CPU-safe server preview overlay.
-2. Local research demo: run the full CUDA benchmark and EdgeTAM/SAM artifacts from the project venv.
+1. Public web demo for Fly.io: upload or select a clip, run YOLOv8n detection and YOLO11n-Seg mask tracking directly in the browser with ONNXRuntime Web, and paint overlays locally.
+2. Local research demo: run the full CUDA benchmark and EdgeTAM/SAM teacher artifacts from the project venv.
 
 ## Fly.io
 
@@ -18,14 +18,15 @@ If Fly asks for an app name, use `fast-sports-segmentation` or another available
 
 ## Browser ONNX
 
-The browser detector uses:
+The browser runtime uses:
 
 - `media/models/yolov8n_480_nms.onnx`
+- `media/models/yolo11n_seg_320.onnx`
 - ONNXRuntime Web from CDN
 - uploaded or bundled video frames sampled in the browser
-- person-class detections drawn on a canvas
+- person-class detections, segmentation masks, simple temporal ID association, and canvas overlays
 
-This is intentionally a detector overlay, not the full EdgeTAM mask stack. It gives recruiters a live, no-GPU interaction path on an uploaded clip while the repo documents the heavier local mask-propagation benchmark.
+This is intentionally a client-side product path. The heavier EdgeTAM/SAM stack is used as local research and teacher-label infrastructure, not as a replayed public demo overlay.
 
 ## Transformers.js
 

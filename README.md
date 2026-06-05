@@ -14,6 +14,8 @@ This repo now includes a deployable browser demo:
 - `scripts\serve_demo.py`: local/demo server with upload and CPU-preview endpoints.
 - `Dockerfile` and `fly.toml`: Fly.io deployment target.
 
+The product demo path is client-side: sample and uploaded video frames stay in the browser, masks are generated from ONNX inference, and overlays are painted locally. Offline EdgeTAM/SAM-style runs are now treated as teacher/benchmark infrastructure, not as replayed demo output. See `docs\CLIENT_SIDE_ML_ROADMAP.md` for the next ML work: sports-specific distillation, temporal mask refinement, and browser runtime optimization.
+
 Run locally:
 
 ```powershell
