@@ -540,6 +540,17 @@ The persistent-ID run produced 14 total IDs over 150 frames, with 10 tracks last
 
 SAM remains the expensive stage at about 69 ms average for refresh frames, so this is not a synchronous per-frame mask system. The viable realtime design is frequent cheap box detection/tracking plus sparse mask refresh, with LocateAnything reserved for async semantic recovery.
 
+For demo renders, `track_segment_video.py` carries each accepted SAM mask forward by warping it to the current tracked box between SAM refreshes. This avoids blank mask frames while keeping the sparse-SAM latency profile. Gate demo outputs with:
+
+```powershell
+.venv\Scripts\python.exe scripts\check_tracking_coverage.py `
+  --metrics outputs\rec_league_recall_masks_15s_v2\metrics.json `
+  --min-avg-boxes 7 `
+  --min-avg-masks 7 `
+  --max-maskless-frames 0 `
+  --max-low-mask-frames 12
+```
+
 ## Analytics Export
 
 Export first-pass image-space analytics from a tracking metrics file:

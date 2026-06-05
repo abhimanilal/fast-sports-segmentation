@@ -449,6 +449,81 @@ def mask_to_box(mask: np.ndarray, width: int, height: int, pad_frac: float) -> n
     return clip_box(np.asarray([x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y]), width, height)
 
 
+def warp_mask_to_box(
+    mask: np.ndarray,
+    source_box: np.ndarray,
+    target_box: np.ndarray,
+    width: int,
+    height: int,
+) -> np.ndarray | None:
+    source = clip_box(source_box, width, height).astype(int)
+    target = clip_box(target_box, width, height).astype(int)
+    sx1, sy1, sx2, sy2 = source.tolist()
+    tx1, ty1, tx2, ty2 = target.tolist()
+    if sx2 <= sx1 or sy2 <= sy1 or tx2 <= tx1 or ty2 <= ty1:
+        return None
+    mask_bool = np.squeeze(mask).astype(bool)
+    crop = mask_bool[sy1:sy2, sx1:sx2]
+    if crop.size == 0 or not crop.any():
+        return None
+    resized = cv2.resize(
+        crop.astype(np.uint8),
+        (max(1, tx2 - tx1), max(1, ty2 - ty1)),
+        interpolation=cv2.INTER_NEAREST,
+    ).astype(bool)
+    warped = np.zeros((height, width), dtype=bool)
+    warped[ty1:ty2, tx1:tx2] = resized[: ty2 - ty1, : tx2 - tx1]
+    return warped
+
+
+def cached_masks_for_tracks(
+    tracks: list[Track],
+    mask_cache: dict[int, tuple[np.ndarray, np.ndarray]],
+    width: int,
+    height: int,
+) -> np.ndarray | None:
+    rendered: list[np.ndarray] = []
+    has_mask = False
+    for track in tracks:
+        cached = mask_cache.get(track.track_id)
+        if cached is None:
+            rendered.append(np.zeros((height, width), dtype=bool))
+            continue
+        cached_mask, cached_box = cached
+        warped = warp_mask_to_box(cached_mask, cached_box, track.box, width, height)
+        if warped is not None:
+            rendered.append(warped)
+            has_mask = True
+        else:
+            rendered.append(np.zeros((height, width), dtype=bool))
+    return np.asarray(rendered, dtype=bool) if has_mask else None
+
+
+def count_nonempty_masks(masks: np.ndarray | None) -> int:
+    if masks is None:
+        return 0
+    return sum(int(np.squeeze(mask).astype(bool).any()) for mask in masks)
+
+
+def update_mask_cache(
+    tracks: list[Track],
+    masks: np.ndarray | None,
+    mask_cache: dict[int, tuple[np.ndarray, np.ndarray]],
+) -> None:
+    if masks is None:
+        return
+    active_ids = {track.track_id for track in tracks}
+    for stale_id in list(mask_cache):
+        if stale_id not in active_ids:
+            del mask_cache[stale_id]
+    for idx, track in enumerate(tracks):
+        if idx >= len(masks):
+            continue
+        mask = np.squeeze(masks[idx]).astype(bool)
+        if mask.any():
+            mask_cache[track.track_id] = (mask, track.box.copy())
+
+
 def init_tracks(
     gray: np.ndarray,
     boxes: list[list[float]],
@@ -751,6 +826,7 @@ def main() -> None:
 
     tracks: list[Track] = []
     next_track_id = 0
+    mask_cache: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     writer = None
     metrics: dict[str, Any] = {
         "video": str(args.video),
@@ -951,10 +1027,17 @@ def main() -> None:
                 args.edge_margin_frac,
                 args.drop_edge_tracks,
             )
+            update_mask_cache(tracks, masks, mask_cache)
             sam_scores = scores.astype(float).tolist()
+        else:
+            active_track_ids = {track.track_id for track in tracks}
+            for stale_id in list(mask_cache):
+                if stale_id not in active_track_ids:
+                    del mask_cache[stale_id]
 
         render_start = time.perf_counter()
-        vis = overlay(frame_rgb, tracks, masks) if args.render_overlays else frame_rgb
+        render_masks = masks if masks is not None else cached_masks_for_tracks(tracks, mask_cache, w, h)
+        vis = overlay(frame_rgb, tracks, render_masks) if args.render_overlays else frame_rgb
         render_seconds = time.perf_counter() - render_start
 
         write_seconds = 0.0
@@ -985,6 +1068,8 @@ def main() -> None:
                 "track_misses": [track.misses for track in tracks],
                 "track_scores": [track.score for track in tracks],
                 "sam_scores": sam_scores,
+                "rendered_mask_count": count_nonempty_masks(render_masks),
+                "mask_cache_ids": sorted(mask_cache.keys()),
                 "sam_seconds": sam_seconds,
                 "read_seconds": read_seconds,
                 "preprocess_seconds": preprocess_seconds,
