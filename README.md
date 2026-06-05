@@ -399,7 +399,38 @@ Outputs:
 - `outputs\sav_edgetam_manual_3sample\per_frame_metrics.csv`
 - `outputs\sav_edgetam_manual_3sample\*\overlay.mp4`
 
-The current EfficientSAM sparse tracker does not yet emit per-frame mask RLEs, so it cannot be fairly scored on SA-V mask IoU without one more instrumentation pass. Its existing metrics can be scored for box IoU, but that would not answer the segmentation-accuracy question. The next benchmark step is to add mask-RLE output to the EfficientSAM runner on SAM refresh frames and compare mask IoU against EdgeTAM.
+EfficientSAM comparison command:
+
+```powershell
+.venv\Scripts\python.exe scripts\benchmark_sav_efficientsam.py `
+  --manifest data\raw\sav_subset51_shard_3\manifest.json `
+  --output-dir outputs\sav_efficientsam_manual_3sample_sam5 `
+  --max-samples 3 `
+  --max-objects 4 `
+  --max-frames 60 `
+  --max-side 512 `
+  --sam-every 5 `
+  --device cuda `
+  --dtype bf16 `
+  --write-video
+```
+
+Comparison:
+
+| System | Cadence | Mask pairs | Box pairs | Mean mask IoU | Mean box IoU | Mask J@0.5 | Box J@0.5 | FPS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| EdgeTAM oracle boxes | video memory every frame | 617 | 617 | 0.816 | 0.803 | 0.911 | 0.911 | 10.86 |
+| EfficientSAM sparse refresh 5 | SAM every 5 frames | 124 | 617 | 0.211 | 0.282 | 0.185 | 0.276 | 32.91 |
+| EfficientSAM sparse refresh 30 | SAM every 30 frames | 22 | 617 | 0.401 | 0.301 | 0.455 | 0.293 | 48.98 |
+
+The EfficientSAM rows score mask IoU only on SAM refresh frames. Box IoU is scored on every tracked frame. This makes the tradeoff visible: EfficientSAM is much faster in this sparse/template-tracking pipeline, but EdgeTAM is far more accurate on generic SA-V video masklets.
+
+Comparison artifacts:
+
+- `outputs\sav_efficientsam_manual_3sample_sam5\summary.json`
+- `outputs\sav_efficientsam_manual_3sample_sam30\summary.json`
+- `outputs\sav_comparison_3sample\comparison.md`
+- `outputs\sav_comparison_3sample\comparison.json`
 
 ## Benchmarks
 

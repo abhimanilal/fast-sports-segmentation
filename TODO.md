@@ -41,7 +41,6 @@ Stretch target:
 - Add periodic EdgeTAM correction/reseed support, not only frame-0 YOLO seeds.
 - Benchmark EdgeTAM with one to three objects separately from full-team tracking.
 - Try TensorRT/ONNX exports for YOLOv8n and YOLO26n before replacing the current detector.
-- Add EfficientSAM mask-RLE metrics so SA-V can compare mask IoU, not only box IoU.
 - Expand SA-V benchmark from 3 videos to 25-50 videos and report confidence intervals.
 
 ## Done
@@ -65,3 +64,5 @@ Stretch target:
 - Added an experimental YOLO-seeded EdgeTAM video-memory runner and validated a 60-frame BF16 smoke run at 9.18 FPS propagation.
 - Added SA-V Subset 51 shard export and EdgeTAM oracle-box accuracy benchmark.
 - Measured EdgeTAM on 3 SA-V Subset 51 videos: 617 object-frame pairs, 0.816 mean mask IoU, 0.911 J@0.5, 10.86 FPS propagation.
+- Added EfficientSAM sparse-refresh SA-V benchmark and comparison report.
+- Measured EfficientSAM on the same 3-video SA-V shard: SAM every 5 frames reached 32.91 FPS with 0.211 refresh-frame mask IoU; SAM every 30 frames reached 48.98 FPS with 0.401 refresh-frame mask IoU.
