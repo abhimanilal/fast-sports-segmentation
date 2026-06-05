@@ -7,116 +7,124 @@
     <link rel="stylesheet" href="/demo_site/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <header class="masthead">
-        <div class="brand-block">
-          <span class="product-mark">FS</span>
+    <main class="product-shell">
+      <header class="product-header">
+        <div class="brand">
+          <span class="brand-mark">FS</span>
           <div>
-            <p class="eyebrow">Sports vision inference studio</p>
+            <p>Realtime sports video analysis</p>
             <h1>Fast Sports Segmentation</h1>
           </div>
         </div>
-        <div class="masthead-actions" aria-label="System status">
-          <span class="live-pill"><i aria-hidden="true"></i> Live browser model</span>
-          <a class="repo-link" href="https://github.com/abhimanilal/fast-sports-segmentation">GitHub</a>
-        </div>
+        <nav class="top-actions" aria-label="Project links">
+          <a href="https://github.com/abhimanilal/fast-sports-segmentation">GitHub</a>
+          <span id="deploy-state">Live on Fly</span>
+        </nav>
       </header>
 
-      <section class="studio" aria-label="Video analysis studio">
-        <div class="stage">
-          <div class="stage-toolbar">
-            <div>
-              <span class="label">Current feed</span>
-              <strong id="feed-title">Rec-league basketball segmentation demo</strong>
-            </div>
-            <div class="segmented" aria-label="View mode">
-              <button class="seg-button active" data-video="/media/sports_segmentation_demo_15s.mp4" type="button">Mask video</button>
-              <button class="seg-button" data-video="/media/sports_segmentation_demo_mid.jpg" type="button">Key frame</button>
-            </div>
+      <section class="hero-workspace" aria-label="Video analysis workspace">
+        <div class="video-card">
+          <div class="workspace-tabs" aria-label="Video source">
+            <button class="source-tab active" data-source="sample" type="button">Sample clip</button>
+            <button class="source-tab" data-source="youtube" type="button">YouTube embed</button>
+            <button class="source-tab" data-source="upload" type="button">Upload video</button>
           </div>
-          <div class="media-frame">
-            <video id="demo-video" controls muted loop playsinline poster="/media/sports_segmentation_demo_mid.jpg">
-              <source src="/media/sports_segmentation_demo_15s.mp4" type="video/mp4" />
-            </video>
-            <img id="demo-frame" alt="Mid-frame mask preview" src="/media/sports_segmentation_demo_mid.jpg" hidden />
-            <canvas id="browser-canvas" hidden></canvas>
-          </div>
-          <div class="stage-footer">
-            <span id="run-state">Ready</span>
-            <span>YOLOv8n ONNX in browser</span>
-            <span>EdgeTAM benchmark evidence</span>
+
+          <div class="viewer-shell">
+            <div class="viewer-head">
+              <div>
+                <span class="kicker">Video input</span>
+                <strong id="feed-title">Rec-league basketball</strong>
+              </div>
+              <div class="mask-toggle" aria-label="Mask overlay toggle">
+                <button class="view-button active" data-view="raw" type="button">Raw</button>
+                <button class="view-button" data-view="mask" type="button">Masks</button>
+              </div>
+            </div>
+
+            <div class="video-box">
+              <video id="demo-video" controls muted loop playsinline poster="/media/rec_league_poster.jpg">
+                <source src="/media/rec_league_raw_15s.mp4" type="video/mp4" />
+              </video>
+              <iframe
+                id="youtube-frame"
+                title="YouTube sports video"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+                hidden
+              ></iframe>
+              <canvas id="browser-canvas" hidden></canvas>
+            </div>
+
+            <div class="prompt-bar">
+              <label for="seed-prompt">Seed mask prompt</label>
+              <div class="prompt-row">
+                <input id="seed-prompt" type="text" value="basketball players on court" />
+                <button id="apply-prompt" type="button">Apply</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <aside class="run-panel" aria-label="Run controls">
-          <div class="run-header">
-            <span class="label">Analyze a clip</span>
-            <h2>Upload video, run detection, review output.</h2>
+        <aside class="control-card" aria-label="Analysis controls">
+          <div class="control-section youtube-controls" id="youtube-controls" hidden>
+            <label for="youtube-url">YouTube URL</label>
+            <div class="inline-row">
+              <input id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=..." />
+              <button id="load-youtube" type="button">Load</button>
+            </div>
+            <small>YouTube videos are embedded for review. Browser inference requires sample or uploaded video frames.</small>
           </div>
 
-          <label class="drop-zone" for="upload-video" id="drop-zone">
+          <label class="upload-target" for="upload-video" id="drop-zone">
             <input id="upload-video" type="file" accept="video/*" />
-            <span>Choose sports video</span>
-            <small id="upload-caption">MP4/WebM clip, processed locally in your browser first.</small>
+            <span>Upload a clip</span>
+            <small id="upload-caption">Preview locally. Render masks server-side.</small>
           </label>
 
-          <div class="action-grid">
-            <button id="run-browser-onnx" class="primary" type="button">
-              <span class="play-icon" aria-hidden="true"></span>
-              Analyze in browser
-            </button>
-            <button id="process-upload" class="secondary-button" type="button">Render server preview</button>
-            <button id="run-benchmark" class="secondary-button quiet" type="button">Run local GPU benchmark</button>
+          <div class="run-actions">
+            <button id="run-browser-onnx" class="primary-action" type="button">Analyze current frame</button>
+            <button id="process-upload" class="secondary-action" type="button">Render server preview</button>
           </div>
 
-          <div class="result-panel">
-            <span class="label">Run output</span>
-            <pre id="benchmark-log" class="log" aria-live="polite">Ready for an uploaded or sample clip.</pre>
+          <div class="run-status">
+            <span id="run-state">Ready</span>
+            <p id="benchmark-log">Sample clip loaded. Toggle masks or analyze the current frame.</p>
           </div>
         </aside>
       </section>
 
-      <section class="evidence-strip" aria-label="Measured evidence">
-        <article class="metric hero-metric">
+      <section class="proof-bar" aria-label="Measured performance">
+        <article>
           <span>Realtime loop</span>
           <strong><b id="fps">96.13</b> FPS</strong>
-          <small>YOLO + sparse SAM, post-warmup</small>
         </article>
-        <article class="metric">
-          <span>p95 frame</span>
+        <article>
+          <span>p95 frame time</span>
           <strong><b id="p95">25.77</b> ms</strong>
-          <small>under 33 ms target</small>
         </article>
-        <article class="metric">
+        <article>
           <span>SA-V mask IoU</span>
           <strong id="iou">0.816</strong>
-          <small>EdgeTAM oracle boxes</small>
         </article>
-        <article class="metric">
-          <span>Persistent IDs</span>
+        <article>
+          <span>Track IDs</span>
           <strong id="tracks">14</strong>
-          <small>tracked over 150 frames</small>
         </article>
       </section>
 
-      <section class="detail-grid" aria-label="Technical evidence">
-        <article class="panel pipeline-panel">
-          <h2>Pipeline</h2>
-          <ol class="pipeline">
-            <li><b>Detect</b><span>YOLO seeds live browser boxes; LocateAnything remains an async open-vocabulary recovery path.</span></li>
-            <li><b>Propagate</b><span>EdgeTAM carries masks through video memory for the high-quality portfolio demo.</span></li>
-            <li><b>Measure</b><span>SA-V IoU, detector AP, latency percentiles, track coverage, and court-space analytics.</span></li>
-          </ol>
+      <section class="product-details" aria-label="Technical evidence">
+        <article>
+          <h2>What runs here</h2>
+          <p>Browser-side YOLOv8n ONNX analyzes sample or uploaded frames without blocking the full page workflow. Server CPU preview is optional for uploaded clips.</p>
         </article>
-
-        <article class="panel">
-          <h2>Accuracy Evidence</h2>
+        <article>
+          <h2>Mask quality</h2>
           <div id="accuracy-bars" class="bars"></div>
         </article>
-
-        <article class="panel command-panel">
-          <h2>Generated Command</h2>
-          <pre id="upload-command" class="command">Upload a clip to generate the reproducible local command.</pre>
+        <article>
+          <h2>Reproducible command</h2>
+          <pre id="upload-command">Upload a clip to generate the local benchmark command.</pre>
         </article>
       </section>
     </main>
