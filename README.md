@@ -8,8 +8,9 @@ The current project positioning and measured claims are summarized in `PORTFOLIO
 
 This repo now includes a deployable browser demo:
 
-- `demo_site\index.html`: upload/select a video, run YOLOv8n ONNX directly in the browser, and view benchmark evidence.
+- `demo_site\index.html`: upload/select a video, run YOLOv8n detection or YOLO11n-Seg mask tracking directly in the browser, and view benchmark evidence.
 - `media\models\yolov8n_480_nms.onnx`: 12.2 MB browser-side detector export.
+- `media\models\yolo11n_seg_480.onnx`: 11.1 MB browser-side segmentation export for local mask overlay generation.
 - `scripts\serve_demo.py`: local/demo server with upload and CPU-preview endpoints.
 - `Dockerfile` and `fly.toml`: Fly.io deployment target.
 

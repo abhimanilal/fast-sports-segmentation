@@ -376,6 +376,11 @@ input {
   background: var(--green);
 }
 
+.alt-action {
+  color: var(--text);
+  background: #205e70;
+}
+
 .secondary-action {
   border: 1px solid var(--line-strong);
   color: var(--text);

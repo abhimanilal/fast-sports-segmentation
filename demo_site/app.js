@@ -5,7 +5,7 @@ const demoAssets = {
     poster: "/media/rec_league_poster.jpg",
     rawTitle: "Raw rec-league clip",
     maskTitle: "On-court YOLO-Seg tracking",
-    note: "Rec-league sample loaded. Mask overlay is pre-rendered; Analyze current frame runs YOLO ONNX in this browser.",
+    note: "Rec-league sample loaded. The Masks toggle is pre-rendered; Track masks in browser generates YOLO-Seg overlays locally.",
   },
   pickup5v5: {
     raw: "/media/pickup_5v5_raw_12s.mp4",
@@ -13,7 +13,7 @@ const demoAssets = {
     poster: "/media/pickup_5v5_poster.jpg",
     rawTitle: "Raw pickup 5v5 clip",
     maskTitle: "Pickup dense YOLO-Seg tracking",
-    note: "Pickup 5v5 sample loaded. Mask overlay is pre-rendered; Analyze current frame runs YOLO ONNX in this browser.",
+    note: "Pickup 5v5 sample loaded. The Masks toggle is pre-rendered; Track masks in browser generates YOLO-Seg overlays locally.",
   },
   streetballPov: {
     raw: "/media/streetball_pov_raw_12s.mp4",
@@ -21,7 +21,7 @@ const demoAssets = {
     poster: "/media/streetball_pov_poster.jpg",
     rawTitle: "Raw streetball POV clip",
     maskTitle: "Streetball dense YOLO-Seg tracking",
-    note: "Streetball POV sample loaded. Mask overlay is pre-rendered; Analyze current frame runs YOLO ONNX in this browser.",
+    note: "Streetball POV sample loaded. The Masks toggle is pre-rendered; Track masks in browser generates YOLO-Seg overlays locally.",
   },
 };
 
@@ -34,6 +34,11 @@ const state = {
   sourceVideoUrl: demoAssets.recLeague.raw,
   seedPrompt: "basketball players on court",
   yoloSession: null,
+  segSession: null,
+  browserTracking: false,
+  browserTrackHandle: null,
+  browserTracks: [],
+  nextBrowserTrackId: 0,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -61,6 +66,7 @@ function currentDemo() {
 }
 
 function setVideo(src, title = "Video input", poster = "") {
+  stopBrowserMaskTracking(false);
   const video = byId("demo-video");
   const iframe = byId("youtube-frame");
   const canvas = byId("browser-canvas");
@@ -311,6 +317,271 @@ function parseYoloNms(output, transform, width, height, minConf = 0.28) {
   return detections.slice(0, 12);
 }
 
+function sigmoid(value) {
+  return 1 / (1 + Math.exp(-value));
+}
+
+function boxArea(box) {
+  return Math.max(0, box.x2 - box.x1) * Math.max(0, box.y2 - box.y1);
+}
+
+function boxIou(a, b) {
+  const x1 = Math.max(a.x1, b.x1);
+  const y1 = Math.max(a.y1, b.y1);
+  const x2 = Math.min(a.x2, b.x2);
+  const y2 = Math.min(a.y2, b.y2);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const union = boxArea(a) + boxArea(b) - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+function centerScore(a, b, width, height) {
+  const ax = (a.x1 + a.x2) / 2;
+  const ay = (a.y1 + a.y2) / 2;
+  const bx = (b.x1 + b.x2) / 2;
+  const by = (b.y1 + b.y2) / 2;
+  const dist = Math.hypot(ax - bx, ay - by) / Math.max(1, Math.hypot(width, height));
+  return 1 - Math.min(1, dist / 0.24);
+}
+
+function nmsDetections(detections, limit = 10, threshold = 0.55) {
+  const sorted = [...detections].sort((a, b) => b.score - a.score);
+  const kept = [];
+  for (const det of sorted) {
+    if (kept.every((other) => boxIou(det, other) < threshold)) kept.push(det);
+    if (kept.length >= limit) break;
+  }
+  return kept;
+}
+
+function decodeSegDetections(detOutput, protoOutput, transform, width, height, minConf = 0.4) {
+  const data = detOutput.data;
+  const dims = detOutput.dims;
+  const channels = dims[1];
+  const anchors = dims[2];
+  const coeffStart = channels - 32;
+  const detections = [];
+  for (let anchor = 0; anchor < anchors; anchor += 1) {
+    const score = Number(data[(4 + 0) * anchors + anchor]);
+    if (score < minConf) continue;
+    const cx = Number(data[0 * anchors + anchor]);
+    const cy = Number(data[1 * anchors + anchor]);
+    const bw = Number(data[2 * anchors + anchor]);
+    const bh = Number(data[3 * anchors + anchor]);
+    const x1 = Math.max(0, Math.min(width, (cx - bw / 2 - transform.padX) / transform.scale));
+    const y1 = Math.max(0, Math.min(height, (cy - bh / 2 - transform.padY) / transform.scale));
+    const x2 = Math.max(0, Math.min(width, (cx + bw / 2 - transform.padX) / transform.scale));
+    const y2 = Math.max(0, Math.min(height, (cy + bh / 2 - transform.padY) / transform.scale));
+    if (x2 <= x1 || y2 <= y1 || boxArea({ x1, y1, x2, y2 }) < width * height * 0.001) continue;
+    const coeffs = new Float32Array(32);
+    for (let idx = 0; idx < 32; idx += 1) {
+      coeffs[idx] = Number(data[(coeffStart + idx) * anchors + anchor]);
+    }
+    detections.push({ x1, y1, x2, y2, score, coeffs });
+  }
+  return nmsDetections(detections, 10, 0.55).map((det) => ({
+    ...det,
+    mask: decodeSegMask(det, protoOutput, transform, width, height),
+  }));
+}
+
+function decodeSegMask(det, protoOutput, transform, width, height) {
+  const proto = protoOutput.data;
+  const protoH = protoOutput.dims[2];
+  const protoW = protoOutput.dims[3];
+  const inputSize = 480;
+  const stride = inputSize / protoW;
+  const mask = new Uint8Array(width * height);
+  const x1 = Math.max(0, Math.floor(det.x1));
+  const y1 = Math.max(0, Math.floor(det.y1));
+  const x2 = Math.min(width - 1, Math.ceil(det.x2));
+  const y2 = Math.min(height - 1, Math.ceil(det.y2));
+  for (let y = y1; y <= y2; y += 1) {
+    const protoY = Math.max(0, Math.min(protoH - 1, Math.floor((y * transform.scale + transform.padY) / stride)));
+    for (let x = x1; x <= x2; x += 1) {
+      const protoX = Math.max(0, Math.min(protoW - 1, Math.floor((x * transform.scale + transform.padX) / stride)));
+      let logit = 0;
+      const protoOffset = protoY * protoW + protoX;
+      for (let k = 0; k < 32; k += 1) {
+        logit += det.coeffs[k] * Number(proto[k * protoH * protoW + protoOffset]);
+      }
+      if (sigmoid(logit) > 0.52) mask[y * width + x] = 1;
+    }
+  }
+  return mask;
+}
+
+function associateBrowserTracks(detections, width, height) {
+  const tracks = state.browserTracks.filter((track) => track.misses <= 20);
+  const usedTracks = new Set();
+  const usedDetections = new Set();
+  const associated = [];
+  const pairs = [];
+  tracks.forEach((track, trackIndex) => {
+    detections.forEach((det, detIndex) => {
+      const score = 0.68 * boxIou(track, det) + 0.32 * centerScore(track, det, width, height);
+      if (score > 0.22) pairs.push({ trackIndex, detIndex, score });
+    });
+  });
+  pairs.sort((a, b) => b.score - a.score);
+  pairs.forEach((pair) => {
+    if (usedTracks.has(pair.trackIndex) || usedDetections.has(pair.detIndex)) return;
+    const track = tracks[pair.trackIndex];
+    const det = detections[pair.detIndex];
+    associated.push({ ...det, id: track.id, misses: 0, hits: track.hits + 1 });
+    usedTracks.add(pair.trackIndex);
+    usedDetections.add(pair.detIndex);
+  });
+  tracks.forEach((track, index) => {
+    if (!usedTracks.has(index) && track.misses < 12) associated.push({ ...track, misses: track.misses + 1 });
+  });
+  detections.forEach((det, index) => {
+    if (!usedDetections.has(index)) {
+      associated.push({ ...det, id: state.nextBrowserTrackId, misses: 0, hits: 1 });
+      state.nextBrowserTrackId += 1;
+    }
+  });
+  state.browserTracks = associated.sort((a, b) => a.id - b.id);
+  return state.browserTracks.filter((track) => track.misses <= 1 && track.mask);
+}
+
+function drawBrowserOverlay(video, detections, elapsed) {
+  const canvas = byId("browser-canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const palette = [
+    [105, 209, 111],
+    [111, 191, 224],
+    [216, 184, 97],
+    [220, 118, 110],
+    [172, 140, 232],
+    [62, 204, 184],
+  ];
+  detections.forEach((det) => {
+    const color = palette[det.id % palette.length];
+    for (let i = 0; i < det.mask.length; i += 1) {
+      if (!det.mask[i]) continue;
+      const px = i * 4;
+      image.data[px] = Math.round(image.data[px] * 0.56 + color[0] * 0.44);
+      image.data[px + 1] = Math.round(image.data[px + 1] * 0.56 + color[1] * 0.44);
+      image.data[px + 2] = Math.round(image.data[px + 2] * 0.56 + color[2] * 0.44);
+    }
+  });
+  ctx.putImageData(image, 0, 0);
+  ctx.lineWidth = Math.max(2, canvas.width / 360);
+  ctx.font = `${Math.max(14, canvas.width / 44)}px ui-sans-serif`;
+  detections.forEach((det) => {
+    const color = palette[det.id % palette.length];
+    ctx.strokeStyle = `rgb(${color.join(",")})`;
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.strokeRect(det.x1, det.y1, det.x2 - det.x1, det.y2 - det.y1);
+    ctx.fillText(`id ${det.id} ${det.score ? det.score.toFixed(2) : ""}`, det.x1 + 4, Math.max(18, det.y1 - 6));
+  });
+  ctx.fillStyle = "rgba(3,5,4,0.72)";
+  ctx.fillRect(10, 10, 240, 34);
+  ctx.fillStyle = "#f5f7f2";
+  ctx.fillText(`client masks ${fmt(elapsed)} ms`, 18, 33);
+}
+
+async function getSegSession() {
+  if (!window.ort) throw new Error("onnxruntime unavailable");
+  if (!state.segSession) {
+    setRunState("Loading masks");
+    ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
+    state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_480.onnx", {
+      executionProviders: ["wasm"],
+      graphOptimizationLevel: "all",
+    });
+  }
+  return state.segSession;
+}
+
+function stopBrowserMaskTracking(showVideo = true) {
+  state.browserTracking = false;
+  if (state.browserTrackHandle) cancelAnimationFrame(state.browserTrackHandle);
+  state.browserTrackHandle = null;
+  const button = byId("run-browser-masks");
+  if (button) {
+    button.textContent = "Track masks in browser";
+    button.disabled = false;
+  }
+  if (showVideo) {
+    const video = byId("demo-video");
+    if (video) video.hidden = false;
+    const canvas = byId("browser-canvas");
+    if (canvas) canvas.hidden = true;
+  }
+}
+
+async function runBrowserMaskFrame(session, video) {
+  const transform = letterboxToTensor(video, 480);
+  const inputName = session.inputNames[0];
+  const started = performance.now();
+  const outputs = await session.run({ [inputName]: transform.input });
+  const elapsed = performance.now() - started;
+  const detections = decodeSegDetections(
+    outputs[session.outputNames[0]],
+    outputs[session.outputNames[1]],
+    transform,
+    video.videoWidth,
+    video.videoHeight,
+  );
+  const tracks = associateBrowserTracks(detections, video.videoWidth, video.videoHeight);
+  drawBrowserOverlay(video, tracks, elapsed);
+  setLog(`Browser generated ${tracks.length} masks with persistent IDs from this video stream. Last YOLO-Seg frame: ${fmt(elapsed)} ms.`);
+}
+
+async function startBrowserMaskTracking() {
+  if (state.source === "youtube") {
+    setLog("YouTube embeds are cross-origin, so this browser cannot read those frames. Use a sample or uploaded video for client-side masks.");
+    return;
+  }
+  const video = byId("demo-video");
+  if (!video.videoWidth) {
+    setLog("Wait for the video to load before starting browser mask tracking.");
+    return;
+  }
+  if (state.browserTracking) {
+    stopBrowserMaskTracking(true);
+    setRunState("Ready");
+    setLog("Browser mask tracking stopped.");
+    return;
+  }
+  const button = byId("run-browser-masks");
+  button.disabled = true;
+  try {
+    const session = await getSegSession();
+    state.browserTracking = true;
+    state.browserTracks = [];
+    state.nextBrowserTrackId = 0;
+    button.disabled = false;
+    button.textContent = "Stop browser masks";
+    byId("youtube-frame").hidden = true;
+    video.hidden = true;
+    byId("browser-canvas").hidden = false;
+    setRunState("Client masks");
+    setLog("Running YOLO-Seg ONNX and mask decoding in this browser. Playback may throttle on CPU-only machines.");
+    video.play().catch(() => {});
+    let lastRun = 0;
+    const loop = async (now) => {
+      if (!state.browserTracking) return;
+      if (!video.paused && now - lastRun > 140) {
+        lastRun = now;
+        await runBrowserMaskFrame(session, video);
+      }
+      state.browserTrackHandle = requestAnimationFrame(loop);
+    };
+    state.browserTrackHandle = requestAnimationFrame(loop);
+  } catch {
+    stopBrowserMaskTracking(true);
+    setRunState("Ready");
+    setLog("Browser mask tracking could not start. The segmentation ONNX model may still be loading or this browser may not support the WASM runtime.");
+  }
+}
+
 async function getYoloSession() {
   if (!window.ort) throw new Error("onnxruntime unavailable");
   if (!state.yoloSession) {
@@ -415,6 +686,7 @@ byId("apply-prompt").addEventListener("click", () => {
 });
 byId("load-youtube").addEventListener("click", loadYouTube);
 byId("run-browser-onnx").addEventListener("click", analyzeCurrentFrame);
+byId("run-browser-masks").addEventListener("click", startBrowserMaskTracking);
 byId("process-upload").addEventListener("click", processUploadOnServer);
 wireUpload();
 setSource("sample");
