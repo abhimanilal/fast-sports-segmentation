@@ -1,14 +1,37 @@
-const assets = {
-  raw: "/media/rec_league_raw_15s.mp4",
-  mask: "/media/rec_league_masks_15s.mp4",
+const demoAssets = {
+  recLeague: {
+    raw: "/media/rec_league_raw_15s.mp4",
+    mask: "/media/rec_league_masks_15s.mp4",
+    poster: "/media/rec_league_poster.jpg",
+    rawTitle: "Raw rec-league clip",
+    maskTitle: "On-court YOLO-Seg tracking",
+    note: "Rec-league sample loaded. Mask overlay is pre-rendered; Analyze current frame runs YOLO ONNX in this browser.",
+  },
+  pickup5v5: {
+    raw: "/media/pickup_5v5_raw_12s.mp4",
+    mask: "/media/pickup_5v5_masks_12s.mp4",
+    poster: "/media/pickup_5v5_poster.jpg",
+    rawTitle: "Raw pickup 5v5 clip",
+    maskTitle: "Pickup dense YOLO-Seg tracking",
+    note: "Pickup 5v5 sample loaded. Mask overlay is pre-rendered; Analyze current frame runs YOLO ONNX in this browser.",
+  },
+  streetballPov: {
+    raw: "/media/streetball_pov_raw_12s.mp4",
+    mask: "/media/streetball_pov_masks_12s.mp4",
+    poster: "/media/streetball_pov_poster.jpg",
+    rawTitle: "Raw streetball POV clip",
+    maskTitle: "Streetball dense YOLO-Seg tracking",
+    note: "Streetball POV sample loaded. Mask overlay is pre-rendered; Analyze current frame runs YOLO ONNX in this browser.",
+  },
 };
 
 const state = {
   summary: null,
   source: "sample",
   view: "raw",
+  demo: "recLeague",
   uploadedPath: null,
-  sourceVideoUrl: assets.raw,
+  sourceVideoUrl: demoAssets.recLeague.raw,
   seedPrompt: "basketball players on court",
   yoloSession: null,
 };
@@ -33,7 +56,11 @@ function setLog(message) {
   setText("benchmark-log", message);
 }
 
-function setVideo(src, title = "Video input") {
+function currentDemo() {
+  return demoAssets[state.demo] || demoAssets.recLeague;
+}
+
+function setVideo(src, title = "Video input", poster = "") {
   const video = byId("demo-video");
   const iframe = byId("youtube-frame");
   const canvas = byId("browser-canvas");
@@ -41,6 +68,7 @@ function setVideo(src, title = "Video input") {
   iframe.hidden = true;
   canvas.hidden = true;
   video.hidden = false;
+  video.poster = poster;
   if (video.currentSrc !== new URL(src, window.location.href).href) {
     video.src = src;
     video.addEventListener(
@@ -53,6 +81,20 @@ function setVideo(src, title = "Video input") {
   }
   state.sourceVideoUrl = src;
   setText("feed-title", title);
+}
+
+function setDemo(demoKey) {
+  if (!demoAssets[demoKey]) return;
+  state.demo = demoKey;
+  document.querySelectorAll(".demo-option").forEach((button) => {
+    button.classList.toggle("active", button.dataset.demo === demoKey);
+  });
+  if (state.source !== "sample") {
+    setSource("sample");
+    return;
+  }
+  setView(state.view);
+  setLog(currentDemo().note);
 }
 
 function setSource(source) {
@@ -70,7 +112,7 @@ function setSource(source) {
   if (source === "sample") {
     setRunState("Ready");
     setView(state.view);
-    setLog("Sample clip loaded. Toggle raw/masks or analyze the current frame.");
+    setLog(currentDemo().note);
   } else if (source === "youtube") {
     setRunState("Embed mode");
     setLog("Paste a YouTube URL to embed it for review. Browser inference is disabled for YouTube frames because they are cross-origin.");
@@ -88,7 +130,8 @@ function setView(view) {
     button.classList.toggle("active", button.dataset.view === view);
   });
   if (state.source === "sample") {
-    setVideo(view === "mask" ? assets.mask : assets.raw, view === "mask" ? "On-court YOLO-Seg tracking" : "Raw rec-league clip");
+    const demo = currentDemo();
+    setVideo(view === "mask" ? demo.mask : demo.raw, view === "mask" ? demo.maskTitle : demo.rawTitle, demo.poster);
   }
 }
 
@@ -362,6 +405,9 @@ document.querySelectorAll(".source-tab").forEach((button) => {
 });
 document.querySelectorAll(".view-button").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
+});
+document.querySelectorAll(".demo-option").forEach((button) => {
+  button.addEventListener("click", () => setDemo(button.dataset.demo));
 });
 byId("apply-prompt").addEventListener("click", () => {
   state.seedPrompt = byId("seed-prompt").value.trim() || "person";

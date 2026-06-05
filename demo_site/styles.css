@@ -200,6 +200,47 @@ h2 {
   background: #0b0f0e;
 }
 
+.demo-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #0d1210;
+}
+
+.demo-option {
+  min-height: 56px;
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  background: #090d0b;
+  text-align: left;
+}
+
+.demo-option span {
+  color: var(--text);
+  font-weight: 850;
+}
+
+.demo-option small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.demo-option.active {
+  border-color: var(--green);
+  background: #152018;
+}
+
+.demo-option.active span {
+  color: var(--green);
+}
+
 .video-box {
   position: relative;
   aspect-ratio: 16 / 9;
@@ -506,6 +547,15 @@ pre {
 
   .workspace-tabs {
     grid-template-columns: 1fr;
+  }
+
+  .demo-picker {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .demo-option {
+    min-height: 50px;
   }
 
   .prompt-row,

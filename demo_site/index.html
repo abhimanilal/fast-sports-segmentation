@@ -42,6 +42,21 @@
               </div>
             </div>
 
+            <div class="demo-picker" aria-label="Demo clip selector">
+              <button class="demo-option active" data-demo="recLeague" type="button">
+                <span>Rec league</span>
+                <small>ROI-filtered overlay</small>
+              </button>
+              <button class="demo-option" data-demo="pickup5v5" type="button">
+                <span>Pickup 5v5</span>
+                <small>Dense YOLO-Seg</small>
+              </button>
+              <button class="demo-option" data-demo="streetballPov" type="button">
+                <span>Streetball POV</span>
+                <small>Moving camera</small>
+              </button>
+            </div>
+
             <div class="video-box">
               <video id="demo-video" controls muted loop playsinline poster="/media/rec_league_poster.jpg">
                 <source src="/media/rec_league_raw_15s.mp4" type="video/mp4" />
@@ -89,7 +104,7 @@
 
           <div class="run-status">
             <span id="run-state">Ready</span>
-            <p id="benchmark-log">Sample clip loaded. Toggle masks or analyze the current frame.</p>
+            <p id="benchmark-log">Sample clip loaded. Mask overlays are pre-rendered; Analyze current frame runs YOLO ONNX in this browser.</p>
           </div>
         </aside>
       </section>
@@ -116,7 +131,7 @@
       <section class="product-details" aria-label="Technical evidence">
         <article>
           <h2>What runs here</h2>
-          <p>The sample overlay uses dense YOLO-Seg masks, active-court ROI filtering, and temporal association for stable review. Browser-side YOLOv8n ONNX still handles single-frame uploaded-video analysis without locking the page.</p>
+          <p>Raw/Masks demo clips use pre-rendered dense YOLO-Seg tracking overlays for smooth playback. Browser-side YOLOv8n ONNX handles single-frame uploaded-video analysis without locking the page.</p>
         </article>
         <article>
           <h2>Mask quality</h2>
