@@ -18,6 +18,20 @@ Current headline result:
 - YOLO is the practical seed detector for sports clips: 2.31 second seed time vs 87.21 seconds for LocateAnything-3B on this host.
 - The realtime sports loop with YOLOv8n/persistent IDs runs at 96.13 FPS post-warmup with 25.77 ms p95 frame time on the rec-league clip.
 
+Export the polished side-by-side demo clip:
+
+```powershell
+.venv\Scripts\python.exe scripts\export_portfolio_demo.py `
+  --output-dir outputs\portfolio_demo `
+  --max-frames 60
+```
+
+Validated demo artifact:
+
+- `outputs\portfolio_demo\sports_segmentation_demo.mp4`
+- 60 frames, 29.97 FPS, 2340x540
+- side-by-side raw clip, EdgeTAM mask propagation, and metrics panel
+
 ## Demo Asset
 
 The starter demo uses Wikimedia Commons `Gant Windup.webm`, a 14 second 1080p clip of John Gant pitching for Atlanta on June 17, 2016.

@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("outputs/benchmarks_realtime_yolo480_identity_missbuf/side512_sam30/analytics_summary.json"),
     )
+    parser.add_argument(
+        "--demo-summary",
+        type=Path,
+        default=Path("outputs/portfolio_demo/demo_summary.json"),
+    )
     return parser.parse_args()
 
 
@@ -106,6 +111,7 @@ def main() -> None:
     locate_seed = summarize_seed(read_json(args.sports_locate))
     realtime = summarize_realtime(read_json(args.realtime_summary))
     analytics = read_json(args.analytics_summary)
+    demo = read_json(args.demo_summary) if args.demo_summary.exists() else None
 
     long_tracks = sum(1 for track in analytics.get("tracks", {}).values() if int(track.get("frames", 0)) >= 60)
     report = {
@@ -121,6 +127,7 @@ def main() -> None:
             "long_tracks_60_plus": long_tracks,
             "court_units": analytics.get("homography", {}).get("units"),
         },
+        "demo": demo,
     }
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -203,6 +210,12 @@ Analytics export:
 - Tracks lasting at least 60 frames: `{long_tracks}`
 - Court projection units: `{analytics.get('homography', {}).get('units')}`
 
+## Polished Demo Artifact
+
+{"- Video: `" + demo["output_video"] + "`" if demo else "- Demo video has not been generated yet."}
+{"- Frames: `" + str(demo["frames"]) + "`" if demo else ""}
+{"- Resolution: `" + str(demo["canvas_width"]) + "x" + str(demo["canvas_height"]) + "`" if demo else ""}
+
 ## Seed Detector Comparison
 
 Measured on the same 60-frame rec-league EdgeTAM run:
@@ -231,7 +244,7 @@ Interpretation: EdgeTAM is the accuracy winner by a wide margin. EfficientSAM3 i
 - Add ByteTrack/DeepSORT-grade identity association for crowded sports footage.
 - Add periodic EdgeTAM correction prompts from YOLO when players enter or occlude.
 - Expand SA-V evaluation from 3 videos to 25-50 videos with confidence intervals.
-- Export a polished 15-30 second demo clip with side-by-side masks, IDs, and court analytics.
+- Extend the polished demo to 15-30 seconds with periodic reseeds and richer court analytics.
 """
     args.output_md.write_text(md, encoding="utf-8")
     print(f"wrote {args.output_md} and {args.output_json}")
