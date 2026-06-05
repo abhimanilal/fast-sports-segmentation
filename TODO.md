@@ -38,6 +38,9 @@ Stretch target:
 - Add multi-object identity quality metrics, not just speed metrics.
 - Upgrade association from heuristic IoU/center matching to Kalman plus appearance embeddings.
 - Add court-zone occupancy summaries on top of the current court-coordinate export.
+- Add periodic EdgeTAM correction/reseed support, not only frame-0 YOLO seeds.
+- Benchmark EdgeTAM with one to three objects separately from full-team tracking.
+- Try TensorRT/ONNX exports for YOLOv8n and YOLO26n before replacing the current detector.
 
 ## Done
 
@@ -56,3 +59,5 @@ Stretch target:
 - Added analytics export for persistent IDs, image-space speed, optional court-plane coordinates, and optional court-plane speed.
 - Added an approximate court homography fixture for the rec-league basketball clip.
 - Hit the realtime benchmark target with persistent IDs using YOLO every 10 frames, SAM every 30 frames, 480 detector input, BF16: 96.13 FPS post-warmup, p95 25.73 ms, 100% active frames.
+- Validated YOLO26n as a drop-in Ultralytics detector, but it missed the p95 realtime target locally at 480 and 416 detector inputs.
+- Added an experimental YOLO-seeded EdgeTAM video-memory runner and validated a 60-frame BF16 smoke run at 9.18 FPS propagation.

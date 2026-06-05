@@ -127,6 +127,17 @@ Optional realtime detector dependency:
 uv pip install --python .venv\Scripts\python.exe ultralytics
 ```
 
+Optional EdgeTAM dependency:
+
+```powershell
+git clone https://github.com/facebookresearch/EdgeTAM.git vendor\EdgeTAM
+$env:SAM2_BUILD_CUDA="0"
+uv pip install --python .venv\Scripts\python.exe -e vendor\EdgeTAM --no-deps
+uv pip install --python .venv\Scripts\python.exe hydra-core iopath tqdm
+```
+
+The EdgeTAM repo includes `checkpoints\edgetam.pt`, a 56 MiB checkpoint in the current clone. On this Windows/Torch 2.7 host, EdgeTAM needed the local compatibility patch in `patches\edgetam_torch27_perceiver.patch`: one `.view(...)` call on an expanded tensor is changed to `.reshape(...)`.
+
 ## Run
 
 ```powershell
@@ -284,6 +295,56 @@ The tracker preserves IDs across detector reseeds with a lightweight IoU/center-
 - `--max-track-misses 3`
 
 This is strong enough for a portfolio realtime-system demo and analytics export, but it is still heuristic identity tracking. For production-grade player identity, the next step is ByteTrack/DeepSORT-style association with Kalman prediction and appearance embeddings.
+
+## YOLO26
+
+Ultralytics' current newer local model line is YOLO26, not YOLO28. The existing `ultralytics` package in this venv loaded `yolo26n.pt`, `yolo12n.pt`, and `yolo11n.pt` directly. YOLO26n is easy to try by swapping the model name:
+
+```powershell
+.venv\Scripts\python.exe scripts\track_segment_video.py `
+  --video data\raw\youtube\clips\rec_league_0008_45s.mp4 `
+  --sam-checkpoint models\efficient_sam3_efficientvit_s_point_prompt_slim.pt `
+  --output-dir outputs\track_youtube_rec_league_yolo26n_smoke `
+  --yolo-every 10 `
+  --yolo-model yolo26n.pt `
+  --yolo-conf 0.25 `
+  --yolo-imgsz 480 `
+  --no-sam-on-yolo `
+  --sam-every 30 `
+  --max-frames 150 `
+  --max-side 512 `
+  --device cuda `
+  --dtype bf16 `
+  --max-detections 8 `
+  --write-video
+```
+
+Local benchmark result: YOLO26n works, but did not beat YOLOv8n in this pipeline on the RTX 3070. At 480 detector input it ran 79.86 FPS with p95 41.98 ms; at 416 input it ran 85.27 FPS with p95 50.40 ms. The previous YOLOv8n 480 persistent-ID run remains the best realtime profile measured here: 96.13 FPS with p95 25.73 ms.
+
+## YOLO -> EdgeTAM
+
+EdgeTAM can be used here with YOLO seed boxes. The experimental runner detects people on frame 0, filters bad/cropped boxes, prompts EdgeTAM with those boxes, and propagates masks through the extracted clip frames:
+
+```powershell
+.venv\Scripts\python.exe scripts\yolo_seed_edgetam_video.py `
+  --video data\raw\youtube\clips\rec_league_0008_45s.mp4 `
+  --output-dir outputs\edgetam_yolo26n_rec_league_filtered_smoke `
+  --yolo-model yolo26n.pt `
+  --yolo-imgsz 480 `
+  --max-objects 6 `
+  --max-frames 60 `
+  --max-side 512 `
+  --device cuda `
+  --dtype bf16 `
+  --write-video
+```
+
+Validated output:
+
+- `outputs\edgetam_yolo26n_rec_league_filtered_smoke\tracked.mp4`
+- `outputs\edgetam_yolo26n_rec_league_filtered_smoke\metrics.json`
+
+Measured on this host: 6 YOLO26n seed objects, 60 propagated frames, 9.18 FPS EdgeTAM propagation, 1.46 seconds model build, 2.51 seconds frame/state init. The quality is useful as a video-memory segmentation experiment, but a one-shot YOLO seed cannot discover players entering later or reliably recover heavy occlusions. For this sports analytics project, EdgeTAM is promising for short prompt-and-track clips; the current YOLOv8n plus sparse EfficientSAM path is still the better realtime base.
 
 ## Benchmarks
 

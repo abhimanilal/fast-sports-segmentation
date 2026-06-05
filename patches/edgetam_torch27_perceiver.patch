@@ -1,0 +1,6 @@
+diff --git a/sam2/modeling/perceiver.py b/sam2/modeling/perceiver.py
+--- a/sam2/modeling/perceiver.py
++++ b/sam2/modeling/perceiver.py
+@@
+-        latents_2d = self.latents_2d.unsqueeze(0).expand(B, -1, -1).view(-1, 1, C)
++        latents_2d = self.latents_2d.unsqueeze(0).expand(B, -1, -1).reshape(-1, 1, C)
