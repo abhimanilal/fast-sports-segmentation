@@ -1,6 +1,22 @@
 # Fast Sports Segmentation
 
-Smoke-test repo for fast sports-video segmentation with EfficientSAM3 model-zoo checkpoints.
+Resume-ready sports-video segmentation and analytics pipeline centered on YOLO/LocateAnything seeding, EdgeTAM video mask propagation, SA-V accuracy benchmarking, and court-space player analytics.
+
+The current project positioning and measured claims are summarized in `PORTFOLIO.md`.
+
+Regenerate the portfolio report from saved benchmark artifacts:
+
+```powershell
+.venv\Scripts\python.exe scripts\build_portfolio_report.py `
+  --output-md PORTFOLIO.md `
+  --output-json outputs\portfolio_report\summary.json
+```
+
+Current headline result:
+
+- EdgeTAM beats the EfficientSAM3 sparse tracker on SA-V mask accuracy: 0.816 mean mask IoU vs 0.211-0.401 on the 3-video shard.
+- YOLO is the practical seed detector for sports clips: 2.31 second seed time vs 87.21 seconds for LocateAnything-3B on this host.
+- The realtime sports loop with YOLOv8n/persistent IDs runs at 96.13 FPS post-warmup with 25.77 ms p95 frame time on the rec-league clip.
 
 ## Demo Asset
 
