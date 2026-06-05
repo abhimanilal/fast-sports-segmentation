@@ -1,0 +1,22 @@
+[project]
+name = "fast-sports-segmentation"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate",
+    "bitsandbytes",
+    "decord",
+    "einops",
+    "lmdb",
+    "matplotlib",
+    "opencv-python",
+    "peft",
+    "pycocotools",
+    "pillow",
+    "protobuf",
+    "scikit-image",
+    "scipy",
+    "sentencepiece",
+    "omegaconf",
+    "transformers==4.57.1",
+]
