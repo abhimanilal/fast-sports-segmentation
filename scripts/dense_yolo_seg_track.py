@@ -18,6 +18,7 @@ class Detection:
     mask: np.ndarray
     conf: float
     hist: np.ndarray
+    foot: tuple[float, float]
 
 
 @dataclass
@@ -52,10 +53,43 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-area-frac", type=float, default=0.0012)
     parser.add_argument("--max-area-frac", type=float, default=0.32)
     parser.add_argument("--association-threshold", type=float, default=0.46)
+    parser.add_argument(
+        "--roi-polygon",
+        default="",
+        help='Optional active-play polygon as "x1,y1 x2,y2 ..."; detections are kept when the box foot point is inside.',
+    )
+    parser.add_argument(
+        "--roi-scale",
+        type=float,
+        default=1.0,
+        help="Scale ROI coordinates before applying them. Useful when a polygon was measured at another resize.",
+    )
     parser.add_argument("--write-video", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--write-frames", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--print-metrics", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
+
+
+def parse_roi_polygon(raw: str, scale: float) -> np.ndarray | None:
+    if not raw.strip():
+        return None
+    points: list[list[float]] = []
+    for token in raw.replace(";", " ").split():
+        x_raw, y_raw = token.split(",", maxsplit=1)
+        points.append([float(x_raw) * scale, float(y_raw) * scale])
+    if len(points) < 3:
+        raise ValueError("--roi-polygon needs at least three x,y points")
+    return np.asarray(points, dtype=np.float32)
+
+
+def foot_point(box: np.ndarray) -> tuple[float, float]:
+    return (float((box[0] + box[2]) / 2.0), float(box[3]))
+
+
+def inside_roi(point: tuple[float, float], roi_polygon: np.ndarray | None) -> bool:
+    if roi_polygon is None:
+        return True
+    return cv2.pointPolygonTest(roi_polygon, point, measureDist=False) >= 0
 
 
 def resize_max_side(frame: np.ndarray, max_side: int) -> tuple[np.ndarray, float]:
@@ -105,27 +139,42 @@ def hist_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.clip(np.dot(a, b), 0.0, 1.0))
 
 
-def decode_detections(result, frame_bgr: np.ndarray, args: argparse.Namespace) -> list[Detection]:
+def decode_detections(
+    result,
+    frame_bgr: np.ndarray,
+    args: argparse.Namespace,
+    roi_polygon: np.ndarray | None,
+) -> tuple[list[Detection], dict[str, int]]:
     h, w = frame_bgr.shape[:2]
     frame_area = float(h * w)
     detections: list[Detection] = []
+    stats = {"raw": 0, "class": 0, "shape": 0, "roi": 0, "kept": 0}
     if result.boxes is None or result.masks is None:
-        return detections
+        return detections, stats
     boxes = result.boxes.xyxy.detach().cpu().numpy()
     confs = result.boxes.conf.detach().cpu().numpy()
     classes = result.boxes.cls.detach().cpu().numpy()
     masks = result.masks.data.detach().cpu().numpy()
     for box, conf, cls, mask_small in zip(boxes, confs, classes, masks):
+        stats["raw"] += 1
         if int(cls) != 0:
             continue
+        stats["class"] += 1
         box = box.astype(np.float32)
         area_frac = box_area(box) / frame_area
         if area_frac < args.min_area_frac or area_frac > args.max_area_frac:
+            stats["shape"] += 1
+            continue
+        foot = foot_point(box)
+        if not inside_roi(foot, roi_polygon):
+            stats["roi"] += 1
             continue
         mask = cv2.resize(mask_small.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
-        detections.append(Detection(box=box, mask=mask, conf=float(conf), hist=appearance_hist(frame_bgr, box, mask)))
+        detections.append(Detection(box=box, mask=mask, conf=float(conf), hist=appearance_hist(frame_bgr, box, mask), foot=foot))
     detections.sort(key=lambda det: det.conf * box_area(det.box), reverse=True)
-    return detections[: args.max_detections]
+    kept = detections[: args.max_detections]
+    stats["kept"] = len(kept)
+    return kept, stats
 
 
 def predict_box(track: Track, width: int, height: int) -> np.ndarray:
@@ -256,6 +305,7 @@ def overlay(frame_bgr: np.ndarray, tracks: list[Track]) -> np.ndarray:
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    roi_polygon = parse_roi_polygon(args.roi_polygon, args.roi_scale)
     cap = cv2.VideoCapture(str(args.video))
     if not cap.isOpened():
         raise RuntimeError(f"Could not open {args.video}")
@@ -271,6 +321,7 @@ def main() -> None:
         "video": str(args.video),
         "model": args.model,
         "source_fps": source_fps,
+        "roi_polygon": roi_polygon.astype(float).tolist() if roi_polygon is not None else None,
         "frames": [],
     }
 
@@ -289,7 +340,7 @@ def main() -> None:
             device=args.device,
             verbose=False,
         )[0]
-        detections = decode_detections(result, frame_bgr, args)
+        detections, detection_stats = decode_detections(result, frame_bgr, args, roi_polygon)
         tracks, next_track_id, assoc = associate_tracks(frame_bgr, tracks, detections, next_track_id, args)
         visible_tracks = [track for track in tracks if track.misses <= 2]
         vis = overlay(frame_bgr, visible_tracks)
@@ -316,6 +367,7 @@ def main() -> None:
                 "track_misses": [track.misses for track in visible_tracks],
                 "boxes": [track.box.astype(float).tolist() for track in visible_tracks],
                 "mask_count": sum(int(track.mask.any()) for track in visible_tracks),
+                "detection_stats": detection_stats,
                 "association": assoc,
                 "frame_seconds": time.perf_counter() - started,
                 "scale": scale,

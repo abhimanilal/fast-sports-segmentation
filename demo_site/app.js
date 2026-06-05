@@ -88,7 +88,7 @@ function setView(view) {
     button.classList.toggle("active", button.dataset.view === view);
   });
   if (state.source === "sample") {
-    setVideo(view === "mask" ? assets.mask : assets.raw, view === "mask" ? "Dense YOLO-Seg tracking" : "Raw rec-league clip");
+    setVideo(view === "mask" ? assets.mask : assets.raw, view === "mask" ? "On-court YOLO-Seg tracking" : "Raw rec-league clip");
   }
 }
 

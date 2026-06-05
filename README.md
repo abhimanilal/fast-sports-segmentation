@@ -365,17 +365,18 @@ For the public portfolio overlay, the repo now prefers a denser segmentation tra
 ```powershell
 .venv\Scripts\python.exe scripts\dense_yolo_seg_track.py `
   --video data\raw\youtube\clips\rec_league_0008_45s.mp4 `
-  --output-dir outputs\dense_yolo11s_seg_rec_league_15s_assoc18 `
+  --output-dir outputs\dense_yolo11s_seg_rec_league_15s_roi `
   --model yolo11s-seg.pt `
   --conf 0.18 `
   --imgsz 768 `
   --association-threshold 0.18 `
   --max-track-misses 30 `
+  --roi-polygon "0,360 640,360 430,170 160,170" `
   --max-frames 450 `
   --write-video
 ```
 
-This is slower than the sparse tracker but better for a live-looking resume demo: zero maskless frames, zero low-mask frames, 9.86 average visible masks, and 42 total IDs over the 450-frame rec-league sample. The remaining quality gap is on-court filtering and stronger re-identification so bench/sideline people are not counted as players.
+This is slower than the sparse tracker but better for a live-looking resume demo. With active-court ROI filtering, the 450-frame rec-league sample produced zero maskless frames, 7.02 average visible masks, 35 total IDs, and 1,196 sideline/bench detections filtered before association. The remaining quality gap is stronger re-identification through heavy occlusions and camera cuts.
 
 ## YOLO26
 
@@ -561,12 +562,12 @@ For sparse-SAM experiment renders, `track_segment_video.py` carries each accepte
 
 ```powershell
 .venv\Scripts\python.exe scripts\check_tracking_coverage.py `
-  --metrics outputs\dense_yolo11s_seg_rec_league_15s_assoc18\metrics.json `
-  --min-avg-boxes 7 `
-  --min-avg-masks 7 `
+  --metrics outputs\dense_yolo11s_seg_rec_league_15s_roi\metrics.json `
+  --min-avg-boxes 5 `
+  --min-avg-masks 5 `
   --max-maskless-frames 0 `
   --max-low-mask-frames 12 `
-  --max-total-track-ids 50
+  --max-total-track-ids 40
 ```
 
 ## Analytics Export
