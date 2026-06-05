@@ -16,6 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-maskless-frames", type=int, default=0)
     parser.add_argument("--max-low-mask-frames", type=int, default=30)
     parser.add_argument("--low-mask-threshold", type=int, default=4)
+    parser.add_argument("--max-total-track-ids", type=int, default=0)
     return parser.parse_args()
 
 
@@ -26,8 +27,17 @@ def main() -> None:
     if not frames:
         raise SystemExit(f"No frame metrics found in {args.metrics}")
 
-    box_counts = [len(frame.get("boxes", [])) for frame in frames]
-    mask_counts = [int(frame.get("rendered_mask_count", 0)) for frame in frames]
+    box_counts = [
+        int(frame.get("visible_tracks", len(frame.get("boxes", []))))
+        for frame in frames
+    ]
+    mask_counts = [
+        int(frame.get("mask_count", frame.get("rendered_mask_count", 0)))
+        for frame in frames
+    ]
+    total_track_ids = int(metrics.get("total_track_ids") or len({
+        track_id for frame in frames for track_id in frame.get("track_ids", [])
+    }))
     summary = {
         "frames": len(frames),
         "avg_boxes": round(statistics.mean(box_counts), 3),
@@ -36,7 +46,7 @@ def main() -> None:
         "min_rendered_masks": min(mask_counts),
         "maskless_frames": sum(count == 0 for count in mask_counts),
         "low_mask_frames": sum(count < args.low_mask_threshold for count in mask_counts),
-        "unique_track_ids": len({track_id for frame in frames for track_id in frame.get("track_ids", [])}),
+        "unique_track_ids": total_track_ids,
     }
     print(json.dumps(summary, indent=2))
 
@@ -49,6 +59,8 @@ def main() -> None:
         failures.append(f"maskless frames {summary['maskless_frames']} > {args.max_maskless_frames}")
     if summary["low_mask_frames"] > args.max_low_mask_frames:
         failures.append(f"low-mask frames {summary['low_mask_frames']} > {args.max_low_mask_frames}")
+    if args.max_total_track_ids > 0 and summary["unique_track_ids"] > args.max_total_track_ids:
+        failures.append(f"track ids {summary['unique_track_ids']} > {args.max_total_track_ids}")
     if failures:
         raise SystemExit("; ".join(failures))
 

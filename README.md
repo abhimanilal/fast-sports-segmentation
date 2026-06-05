@@ -360,6 +360,23 @@ The tracker preserves IDs across detector reseeds with a lightweight IoU/center-
 
 This is strong enough for a portfolio realtime-system demo and analytics export, but it is still heuristic identity tracking. For production-grade player identity, the next step is ByteTrack/DeepSORT-style association with Kalman prediction and appearance embeddings.
 
+For the public portfolio overlay, the repo now prefers a denser segmentation tracker over sparse SAM refreshes. The dense path runs YOLO-Seg on every frame and associates masks with IoU, center motion, a miss buffer, and HSV appearance:
+
+```powershell
+.venv\Scripts\python.exe scripts\dense_yolo_seg_track.py `
+  --video data\raw\youtube\clips\rec_league_0008_45s.mp4 `
+  --output-dir outputs\dense_yolo11s_seg_rec_league_15s_assoc18 `
+  --model yolo11s-seg.pt `
+  --conf 0.18 `
+  --imgsz 768 `
+  --association-threshold 0.18 `
+  --max-track-misses 30 `
+  --max-frames 450 `
+  --write-video
+```
+
+This is slower than the sparse tracker but better for a live-looking resume demo: zero maskless frames, zero low-mask frames, 9.86 average visible masks, and 42 total IDs over the 450-frame rec-league sample. The remaining quality gap is on-court filtering and stronger re-identification so bench/sideline people are not counted as players.
+
 ## YOLO26
 
 Ultralytics' current newer local model line is YOLO26, not YOLO28. The existing `ultralytics` package in this venv loaded `yolo26n.pt`, `yolo12n.pt`, and `yolo11n.pt` directly. YOLO26n is easy to try by swapping the model name:
@@ -540,15 +557,16 @@ The persistent-ID run produced 14 total IDs over 150 frames, with 10 tracks last
 
 SAM remains the expensive stage at about 69 ms average for refresh frames, so this is not a synchronous per-frame mask system. The viable realtime design is frequent cheap box detection/tracking plus sparse mask refresh, with LocateAnything reserved for async semantic recovery.
 
-For demo renders, `track_segment_video.py` carries each accepted SAM mask forward by warping it to the current tracked box between SAM refreshes. This avoids blank mask frames while keeping the sparse-SAM latency profile. Gate demo outputs with:
+For sparse-SAM experiment renders, `track_segment_video.py` carries each accepted SAM mask forward by warping it to the current tracked box between SAM refreshes. This avoids blank mask frames while keeping the sparse-SAM latency profile. Gate tracking outputs with:
 
 ```powershell
 .venv\Scripts\python.exe scripts\check_tracking_coverage.py `
-  --metrics outputs\rec_league_recall_masks_15s_v2\metrics.json `
+  --metrics outputs\dense_yolo11s_seg_rec_league_15s_assoc18\metrics.json `
   --min-avg-boxes 7 `
   --min-avg-masks 7 `
   --max-maskless-frames 0 `
-  --max-low-mask-frames 12
+  --max-low-mask-frames 12 `
+  --max-total-track-ids 50
 ```
 
 ## Analytics Export
