@@ -110,22 +110,22 @@
         </aside>
       </section>
 
-      <section class="proof-bar" aria-label="Measured performance">
+      <section class="proof-bar" aria-label="Browser runtime status">
         <article>
-          <span>Realtime loop</span>
-          <strong><b id="fps">96.13</b> FPS</strong>
+          <span>Client model</span>
+          <strong><b id="fps">YOLO11n-Seg</b></strong>
         </article>
         <article>
-          <span>p95 frame time</span>
-          <strong><b id="p95">25.77</b> ms</strong>
+          <span>Last browser frame</span>
+          <strong><b id="p95">Not run</b></strong>
         </article>
         <article>
-          <span>SA-V mask IoU</span>
-          <strong id="iou">0.816</strong>
+          <span>Execution</span>
+          <strong id="iou">CPU/WASM</strong>
         </article>
         <article>
-          <span>Track IDs</span>
-          <strong id="tracks">14</strong>
+          <span>Video data</span>
+          <strong id="tracks">Local</strong>
         </article>
       </section>
 
@@ -135,8 +135,12 @@
           <p>Raw/Masks demo clips are pre-rendered for smooth playback. Track masks in browser runs YOLO-Seg ONNX on the selected or uploaded video frame stream, decodes masks, associates IDs, and paints the overlay locally.</p>
         </article>
         <article>
-          <h2>Mask quality</h2>
-          <div id="accuracy-bars" class="bars"></div>
+          <h2>Browser runtime</h2>
+          <div id="accuracy-bars" class="bars">
+            <div class="runtime-row"><span>Model</span><strong>YOLO11n-Seg ONNX</strong></div>
+            <div class="runtime-row"><span>Input</span><strong>256 x 256</strong></div>
+            <div class="runtime-row"><span>Output</span><strong>Mask canvas + track IDs</strong></div>
+          </div>
         </article>
         <article>
           <h2>Reproducible command</h2>

@@ -436,8 +436,9 @@ input {
 .proof-bar strong {
   display: block;
   margin-top: 8px;
-  font-size: 30px;
+  font-size: clamp(21px, 2.2vw, 30px);
   line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .proof-bar b {
@@ -500,6 +501,25 @@ input {
 
 .bar-fill.secondary {
   background: var(--gold);
+}
+
+.runtime-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.runtime-row:last-child {
+  border-bottom: 0;
+}
+
+.runtime-row strong {
+  color: var(--text);
+  text-align: right;
 }
 
 pre {

@@ -35,6 +35,8 @@ const state = {
   seedPrompt: "basketball players on court",
   yoloSession: null,
   segSession: null,
+  segInputSize: 256,
+  segBackend: "CPU/WASM",
   browserTracking: false,
   browserTrackHandle: null,
   browserTracks: [],
@@ -180,43 +182,6 @@ function loadYouTube() {
   setText("feed-title", "Embedded YouTube clip");
   setRunState("YouTube loaded");
   setLog("YouTube clip embedded. Use it for visual review or upload a local clip to run model inference.");
-}
-
-function renderSummary(summary) {
-  state.summary = summary;
-  const realtime = summary.sports_realtime || {};
-  const analytics = summary.analytics || {};
-  const sav = summary.sav_comparison || [];
-  setText("fps", fmt(realtime.fps));
-  setText("p95", fmt(realtime.p95_ms));
-  setText("tracks", String(analytics.track_count || 0));
-  const edge = sav.find((row) => row.name && row.name.startsWith("EdgeTAM")) || sav[0] || {};
-  setText("iou", fmt(edge.mean_mask_iou, 3));
-
-  const bars = byId("accuracy-bars");
-  bars.innerHTML = "";
-  sav.forEach((row, index) => {
-    const value = Number(row.mean_mask_iou || 0);
-    const item = document.createElement("div");
-    item.className = "bar-row";
-    item.innerHTML = `
-      <div class="bar-label">
-        <span>${row.name}</span>
-        <strong>${value.toFixed(3)} IoU</strong>
-      </div>
-      <div class="bar-track"><div class="bar-fill ${index === 0 ? "" : "secondary"}"></div></div>
-    `;
-    bars.appendChild(item);
-    requestAnimationFrame(() => {
-      item.querySelector(".bar-fill").style.width = `${Math.min(100, value * 100)}%`;
-    });
-  });
-}
-
-async function loadSummary() {
-  const response = await fetch("/api/summary");
-  if (!response.ok) return;
-  renderSummary(await response.json());
 }
 
 async function processUploadOnServer() {
@@ -389,7 +354,7 @@ function decodeSegMask(det, protoOutput, transform, width, height) {
   const proto = protoOutput.data;
   const protoH = protoOutput.dims[2];
   const protoW = protoOutput.dims[3];
-  const inputSize = 480;
+  const inputSize = state.segInputSize;
   const stride = inputSize / protoW;
   const mask = new Uint8Array(width * height);
   const x1 = Math.max(0, Math.floor(det.x1));
@@ -491,10 +456,19 @@ async function getSegSession() {
   if (!state.segSession) {
     setRunState("Loading masks");
     ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
-    state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_480.onnx", {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all",
-    });
+    try {
+      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_256.onnx", {
+        executionProviders: ["webgpu", "wasm"],
+        graphOptimizationLevel: "all",
+      });
+      state.segBackend = navigator.gpu ? "WebGPU/WASM" : "CPU/WASM";
+    } catch {
+      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_seg_256.onnx", {
+        executionProviders: ["wasm"],
+        graphOptimizationLevel: "all",
+      });
+      state.segBackend = "CPU/WASM";
+    }
   }
   return state.segSession;
 }
@@ -517,7 +491,7 @@ function stopBrowserMaskTracking(showVideo = true) {
 }
 
 async function runBrowserMaskFrame(session, video) {
-  const transform = letterboxToTensor(video, 480);
+  const transform = letterboxToTensor(video, state.segInputSize);
   const inputName = session.inputNames[0];
   const started = performance.now();
   const outputs = await session.run({ [inputName]: transform.input });
@@ -531,7 +505,9 @@ async function runBrowserMaskFrame(session, video) {
   );
   const tracks = associateBrowserTracks(detections, video.videoWidth, video.videoHeight);
   drawBrowserOverlay(video, tracks, elapsed);
-  setLog(`Browser generated ${tracks.length} masks with persistent IDs from this video stream. Last YOLO-Seg frame: ${fmt(elapsed)} ms.`);
+  setText("p95", `${fmt(elapsed, 0)} ms`);
+  setText("tracks", `${tracks.length} masks`);
+  setLog(`Browser generated ${tracks.length} masks with persistent IDs from this video stream. Last YOLO-Seg frame: ${fmt(elapsed)} ms at ${state.segInputSize} input.`);
 }
 
 async function startBrowserMaskTracking() {
@@ -563,12 +539,14 @@ async function startBrowserMaskTracking() {
     video.hidden = true;
     byId("browser-canvas").hidden = false;
     setRunState("Client masks");
-    setLog("Running YOLO-Seg ONNX and mask decoding in this browser. Playback may throttle on CPU-only machines.");
+    setText("fps", "YOLO11n-Seg");
+    setText("iou", state.segBackend);
+    setLog("Running YOLO-Seg ONNX and mask decoding in this browser with the fast 320 input path.");
     video.play().catch(() => {});
     let lastRun = 0;
     const loop = async (now) => {
       if (!state.browserTracking) return;
-      if (!video.paused && now - lastRun > 140) {
+      if (!video.paused && now - lastRun > 90) {
         lastRun = now;
         await runBrowserMaskFrame(session, video);
       }
@@ -690,4 +668,3 @@ byId("run-browser-masks").addEventListener("click", startBrowserMaskTracking);
 byId("process-upload").addEventListener("click", processUploadOnServer);
 wireUpload();
 setSource("sample");
-loadSummary();
