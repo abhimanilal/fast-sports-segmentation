@@ -346,6 +346,61 @@ Validated output:
 
 Measured on this host: 6 YOLO26n seed objects, 60 propagated frames, 9.18 FPS EdgeTAM propagation, 1.46 seconds model build, 2.51 seconds frame/state init. The quality is useful as a video-memory segmentation experiment, but a one-shot YOLO seed cannot discover players entering later or reliably recover heavy occlusions. For this sports analytics project, EdgeTAM is promising for short prompt-and-track clips; the current YOLOv8n plus sparse EfficientSAM path is still the better realtime base.
 
+## SA-V Accuracy Benchmark
+
+For accuracy, this repo uses Meta's SA-V dataset rather than SA-1B. SA-V is the video dataset released with SAM 2: 51K videos and 643K masklets. The benchmark path starts with the FiftyOne/Hugging Face Subset 51 mirror because it is easy to shard locally: 917 6-fps videos with `manual` and `auto` masklet annotations.
+
+Export a small local shard:
+
+```powershell
+$env:FIFTYONE_DATABASE_DIR="E:\FiftyOneDB"
+$env:FIFTYONE_DEFAULT_DATASET_DIR="E:\FiftyOne"
+.venv\Scripts\python.exe scripts\export_sav_subset51_shard.py `
+  --max-samples 3 `
+  --dataset-dir data\raw\sav_subset51 `
+  --output-dir data\raw\sav_subset51_shard_3 `
+  --annotation-field manual
+```
+
+Run the EdgeTAM oracle-prompt benchmark:
+
+```powershell
+.venv\Scripts\python.exe scripts\benchmark_sav_edgetam.py `
+  --manifest data\raw\sav_subset51_shard_3\manifest.json `
+  --output-dir outputs\sav_edgetam_manual_3sample `
+  --max-samples 3 `
+  --max-objects 4 `
+  --max-frames 60 `
+  --max-side 512 `
+  --device cuda `
+  --dtype bf16 `
+  --write-video
+```
+
+This benchmark uses the ground-truth first-frame mask boxes as prompts. That isolates video tracking and mask propagation quality from detector errors.
+
+Validated local result:
+
+| System | Shard | Object-frame pairs | Mean mask IoU | Mean box IoU | J@0.5 | Propagation FPS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| EdgeTAM, oracle first-frame boxes, BF16 | 3 SA-V Subset 51 videos, manual masklets | 617 | 0.816 | 0.803 | 0.911 | 10.86 |
+
+Per-sample results:
+
+| Video | Seeded masklets | Mean mask IoU | J@0.5 | Propagation FPS |
+| --- | ---: | ---: | ---: | ---: |
+| `sav_051000` | 4 | 0.849 | 0.975 | 10.45 |
+| `sav_051001` | 3 | 0.911 | 0.989 | 11.38 |
+| `sav_051002` | 4 | 0.690 | 0.766 | 10.79 |
+
+Outputs:
+
+- `outputs\sav_edgetam_manual_3sample\summary.json`
+- `outputs\sav_edgetam_manual_3sample\per_frame_metrics.csv`
+- `outputs\sav_edgetam_manual_3sample\*\overlay.mp4`
+
+The current EfficientSAM sparse tracker does not yet emit per-frame mask RLEs, so it cannot be fairly scored on SA-V mask IoU without one more instrumentation pass. Its existing metrics can be scored for box IoU, but that would not answer the segmentation-accuracy question. The next benchmark step is to add mask-RLE output to the EfficientSAM runner on SAM refresh frames and compare mask IoU against EdgeTAM.
+
 ## Benchmarks
 
 Realtime target for the inner loop:
