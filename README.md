@@ -277,6 +277,14 @@ Run the realtime-oriented YOLO path:
 
 This keeps YOLO as the cheap realtime detector and lets SAM refresh masks on its own cadence. Use `--sam-on-yolo` when you want every detector reseed validated by SAM, but that is slower and misses the realtime frame budget on this host.
 
+The tracker preserves IDs across detector reseeds with a lightweight IoU/center-distance association layer and a short miss buffer. These defaults are intentionally simple enough to run in the live loop:
+
+- `--assoc-iou-threshold 0.05`
+- `--assoc-center-frac 0.35`
+- `--max-track-misses 3`
+
+This is strong enough for a portfolio realtime-system demo and analytics export, but it is still heuristic identity tracking. For production-grade player identity, the next step is ByteTrack/DeepSORT-style association with Kalman prediction and appearance embeddings.
+
 ## Benchmarks
 
 Realtime target for the inner loop:
@@ -308,6 +316,11 @@ Validated on this host with `rec_league_0008_45s.mp4`:
 | Profile | FPS | p50 frame | p95 frame | Active frames | Avg tracks | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | YOLOv8n every 10, SAM every 30, 512 input, BF16 | 98.55 | 5.53 ms | 32.14 ms | 100% | 6.36 | Passes 30 FPS p95 target |
+| YOLOv8n every 10, SAM every 30, 480 input, BF16, persistent IDs | 96.13 | 6.26 ms | 25.73 ms | 100% | 8.07 | Passes 30 FPS p95 target |
+
+The persistent-ID run produced 14 total IDs over 150 frames, with 10 tracks lasting at least 60 frames after warmup. Output folder:
+
+- `outputs\benchmarks_realtime_yolo480_identity_missbuf\side512_sam30`
 
 SAM remains the expensive stage at about 69 ms average for refresh frames, so this is not a synchronous per-frame mask system. The viable realtime design is frequent cheap box detection/tracking plus sparse mask refresh, with LocateAnything reserved for async semantic recovery.
 
@@ -322,7 +335,17 @@ Export first-pass image-space analytics from a tracking metrics file:
   --summary-json outputs\benchmarks_realtime_yolo512\side512_sam30\analytics_summary.json
 ```
 
-The CSV includes frame time, local track id, box center, box size, SAM score when available, detector source, and image-space speed. Speeds reset on detector reseed frames because the current tracker does not yet preserve identity across detections. That is the next required step before claiming player-level speed analytics.
+Export with an approximate court-plane homography:
+
+```powershell
+.venv\Scripts\python.exe scripts\export_tracking_analytics.py `
+  --metrics outputs\benchmarks_realtime_yolo480_identity_missbuf\side512_sam30\metrics.json `
+  --homography-json examples\rec_league_0008_court_homography.json `
+  --output-csv outputs\benchmarks_realtime_yolo480_identity_missbuf\side512_sam30\analytics.csv `
+  --summary-json outputs\benchmarks_realtime_yolo480_identity_missbuf\side512_sam30\analytics_summary.json
+```
+
+The CSV includes frame time, persistent track id, box center, box size, SAM score when available, detector source, image-space speed, optional court coordinates, and optional court-plane speed. The included rec-league homography is approximate and calibrated to the visible floor plane in the resized 512-side clip, not a full official court model.
 
 Current LocateAnything local status on this Windows host:
 

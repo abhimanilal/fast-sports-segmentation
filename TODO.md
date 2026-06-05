@@ -31,14 +31,13 @@ Stretch target:
 
 ## Immediate TODOs
 
-- Add a stable track identity layer with Kalman prediction and association by IoU/appearance.
 - Add benchmark fixtures for all five informal basketball clips.
-- Add analytics outputs: player center, mask area, court-zone occupancy, and simple speed estimates.
 - Add a `scripts/export_demo_clip.py` command for polished before/after demo videos.
 - Pin the LocateAnything remote-code revision to avoid surprise Hugging Face code updates.
 - Add CI-light tests for box filtering, NMS, and metrics parsing.
 - Add multi-object identity quality metrics, not just speed metrics.
-- Add a lightweight court calibration step so tracks become court-space analytics, not only image-space overlays.
+- Upgrade association from heuristic IoU/center matching to Kalman plus appearance embeddings.
+- Add court-zone occupancy summaries on top of the current court-coordinate export.
 
 ## Done
 
@@ -53,3 +52,7 @@ Stretch target:
 - Added YOLOv8n realtime person detector path.
 - Kept LocateAnything as async semantic reseeding rather than the realtime detector.
 - Hit the realtime benchmark target on the rec-league clip with YOLO every 10 frames, SAM every 30 frames, 512 detector input, BF16: 98.55 FPS post-warmup, p95 32.14 ms, 100% active frames.
+- Added persistent track IDs across detector reseeds with IoU/center-distance association and a short miss buffer.
+- Added analytics export for persistent IDs, image-space speed, optional court-plane coordinates, and optional court-plane speed.
+- Added an approximate court homography fixture for the rec-league basketball clip.
+- Hit the realtime benchmark target with persistent IDs using YOLO every 10 frames, SAM every 30 frames, 480 detector input, BF16: 96.13 FPS post-warmup, p95 25.73 ms, 100% active frames.

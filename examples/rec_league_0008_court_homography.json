@@ -1,0 +1,16 @@
+{
+  "description": "Approximate local-court calibration for data/raw/youtube/clips/rec_league_0008_45s.mp4 after max-side 512 resize. Coordinates are a rough visible-floor plane in meters, not an official full-court calibration.",
+  "image_points": [
+    [42.0, 254.0],
+    [480.0, 254.0],
+    [373.0, 118.0],
+    [154.0, 118.0]
+  ],
+  "court_points": [
+    [0.0, 0.0],
+    [15.0, 0.0],
+    [15.0, 8.0],
+    [0.0, 8.0]
+  ],
+  "units": "meters"
+}

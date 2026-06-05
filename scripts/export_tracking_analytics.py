@@ -17,6 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", type=Path, required=True)
     parser.add_argument("--summary-json", type=Path, required=True)
     parser.add_argument("--fps", type=float, default=None)
+    parser.add_argument("--homography-json", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -37,11 +38,38 @@ def box_features(box: list[float]) -> dict[str, float]:
     }
 
 
+def load_homography(path: Path | None):
+    if path is None:
+        return None, None
+    import cv2
+    import numpy as np
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    image_points = np.asarray(raw["image_points"], dtype=np.float32)
+    court_points = np.asarray(raw["court_points"], dtype=np.float32)
+    homography, _ = cv2.findHomography(image_points, court_points, method=0)
+    if homography is None:
+        raise RuntimeError(f"Could not compute homography from {path}")
+    return homography, raw
+
+
+def project_point(homography, x: float, y: float) -> tuple[float, float]:
+    import numpy as np
+
+    point = np.asarray([x, y, 1.0], dtype=np.float64)
+    projected = homography @ point
+    if abs(projected[2]) < 1e-9:
+        return float("nan"), float("nan")
+    return float(projected[0] / projected[2]), float(projected[1] / projected[2])
+
+
 def main() -> None:
     args = parse_args()
     metrics: dict[str, Any] = json.loads(args.metrics.read_text(encoding="utf-8"))
     fps = args.fps or float(metrics.get("source_fps") or 30.0)
+    homography, calibration = load_homography(args.homography_json)
     last_by_track: dict[int, tuple[int, float, float]] = {}
+    last_court_by_track: dict[int, tuple[int, float, float]] = {}
     rows: list[dict[str, Any]] = []
     track_frame_counts: defaultdict[int, int] = defaultdict(int)
     speeds_by_track: defaultdict[int, list[float]] = defaultdict(list)
@@ -49,30 +77,45 @@ def main() -> None:
     for frame in metrics["frames"]:
         frame_idx = int(frame["frame"])
         boxes = frame.get("boxes", [])
+        track_ids = frame.get("track_ids")
         track_scores = frame.get("track_scores", [])
         sam_scores = frame.get("sam_scores", [])
         detection_source = frame.get("detection_source") or ""
-        if detection_source:
-            # Current track ids are local to the active detector seed set. Until a
-            # real association layer exists, do not carry velocity across reseeds.
+        if detection_source and not track_ids:
+            # Older metrics used local track indices that changed on reseed.
             last_by_track.clear()
+            last_court_by_track.clear()
         for local_track_id, box in enumerate(boxes):
+            track_id = int(track_ids[local_track_id]) if track_ids else local_track_id
             features = box_features([float(value) for value in box])
-            prev = last_by_track.get(local_track_id)
+            court_x = ""
+            court_y = ""
+            court_speed = ""
+            if homography is not None:
+                court_x, court_y = project_point(homography, features["cx"], features["cy"])
+                prev_court = last_court_by_track.get(track_id)
+                if prev_court is not None:
+                    prev_frame, prev_x, prev_y = prev_court
+                    dt = max(1, frame_idx - prev_frame) / fps
+                    court_speed = math.hypot(court_x - prev_x, court_y - prev_y) / dt
+                last_court_by_track[track_id] = (frame_idx, court_x, court_y)
+            prev = last_by_track.get(track_id)
             speed_px_s = 0.0
             if prev is not None:
                 prev_frame, prev_cx, prev_cy = prev
                 dt = max(1, frame_idx - prev_frame) / fps
                 speed_px_s = math.hypot(features["cx"] - prev_cx, features["cy"] - prev_cy) / dt
-                speeds_by_track[local_track_id].append(speed_px_s)
-            last_by_track[local_track_id] = (frame_idx, features["cx"], features["cy"])
-            track_frame_counts[local_track_id] += 1
+                speeds_by_track[track_id].append(speed_px_s)
+            last_by_track[track_id] = (frame_idx, features["cx"], features["cy"])
+            track_frame_counts[track_id] += 1
             rows.append(
                 {
                     "frame": frame_idx,
                     "time_seconds": frame_idx / fps,
-                    "track_id": local_track_id,
+                    "track_id": track_id,
                     **features,
+                    "court_x": court_x,
+                    "court_y": court_y,
                     "track_score": track_scores[local_track_id]
                     if local_track_id < len(track_scores)
                     else "",
@@ -80,6 +123,7 @@ def main() -> None:
                     if local_track_id < len(sam_scores)
                     else "",
                     "speed_px_s": speed_px_s,
+                    "court_speed_units_s": court_speed,
                     "detection_source": detection_source,
                 }
             )
@@ -101,9 +145,12 @@ def main() -> None:
                 "width",
                 "height",
                 "area",
+                "court_x",
+                "court_y",
                 "track_score",
                 "sam_score",
                 "speed_px_s",
+                "court_speed_units_s",
                 "detection_source",
             ],
         )
@@ -121,6 +168,7 @@ def main() -> None:
             * 100.0
         ),
         "track_count": len(track_frame_counts),
+        "homography": calibration,
         "tracks": {
             str(track_id): {
                 "frames": count,

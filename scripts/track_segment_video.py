@@ -25,6 +25,7 @@ class Track:
     template: np.ndarray
     score: float = 1.0
     age: int = 0
+    misses: int = 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,6 +67,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--max-detections", type=int, default=8)
     parser.add_argument("--box-nms-iou", type=float, default=0.45)
+    parser.add_argument("--assoc-iou-threshold", type=float, default=0.05)
+    parser.add_argument("--assoc-center-frac", type=float, default=0.35)
+    parser.add_argument("--max-track-misses", type=int, default=3)
     parser.add_argument("--min-box-area-frac", type=float, default=0.0015)
     parser.add_argument("--max-box-area-frac", type=float, default=0.22)
     parser.add_argument("--min-box-side", type=float, default=8.0)
@@ -445,15 +449,96 @@ def mask_to_box(mask: np.ndarray, width: int, height: int, pad_frac: float) -> n
     return clip_box(np.asarray([x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y]), width, height)
 
 
-def init_tracks(gray: np.ndarray, boxes: list[list[float]], width: int, height: int) -> list[Track]:
+def init_tracks(
+    gray: np.ndarray,
+    boxes: list[list[float]],
+    width: int,
+    height: int,
+    start_track_id: int = 0,
+) -> tuple[list[Track], int]:
     tracks: list[Track] = []
     for idx, box in enumerate(boxes):
         clipped = clip_box(np.asarray(box, dtype=np.float32), width, height)
         template = crop_gray(gray, clipped)
         if template.size == 0:
             continue
-        tracks.append(Track(track_id=idx, box=clipped, template=template))
-    return tracks
+        tracks.append(Track(track_id=start_track_id, box=clipped, template=template))
+        start_track_id += 1
+    return tracks, start_track_id
+
+
+def associate_detections_to_tracks(
+    gray: np.ndarray,
+    existing_tracks: list[Track],
+    boxes: list[list[float]],
+    width: int,
+    height: int,
+    next_track_id: int,
+    iou_threshold: float,
+    center_threshold_frac: float,
+    max_track_misses: int,
+) -> tuple[list[Track], int, dict[str, int]]:
+    stats = {
+        "detections": len(boxes),
+        "matched": 0,
+        "new": 0,
+        "kept_unmatched": 0,
+        "dropped": 0,
+    }
+    if not existing_tracks:
+        tracks, next_track_id = init_tracks(gray, boxes, width, height, next_track_id)
+        stats["new"] = len(tracks)
+        return tracks, next_track_id, stats
+
+    diag = float(np.hypot(width, height))
+    unmatched_track_indices = set(range(len(existing_tracks)))
+    output_tracks: list[Track] = []
+
+    for box in boxes:
+        clipped = clip_box(np.asarray(box, dtype=np.float32), width, height)
+        cx = float((clipped[0] + clipped[2]) / 2.0)
+        cy = float((clipped[1] + clipped[3]) / 2.0)
+        best_idx = None
+        best_score = -1.0
+        for track_idx in list(unmatched_track_indices):
+            track = existing_tracks[track_idx]
+            iou = box_iou(clipped, track.box)
+            tcx = float((track.box[0] + track.box[2]) / 2.0)
+            tcy = float((track.box[1] + track.box[3]) / 2.0)
+            center_frac = float(np.hypot(cx - tcx, cy - tcy) / max(1.0, diag))
+            if iou < iou_threshold and center_frac > center_threshold_frac:
+                continue
+            score = iou + max(0.0, center_threshold_frac - center_frac)
+            if score > best_score:
+                best_score = score
+                best_idx = track_idx
+        template = crop_gray(gray, clipped)
+        if template.size == 0:
+            continue
+        if best_idx is None:
+            output_tracks.append(Track(track_id=next_track_id, box=clipped, template=template))
+            next_track_id += 1
+            stats["new"] += 1
+            continue
+        matched = existing_tracks[best_idx]
+        unmatched_track_indices.remove(best_idx)
+        matched.box = clipped
+        matched.template = template
+        matched.score = 1.0
+        matched.age = 0
+        matched.misses = 0
+        output_tracks.append(matched)
+        stats["matched"] += 1
+
+    for track_idx in sorted(unmatched_track_indices):
+        track = existing_tracks[track_idx]
+        track.misses += 1
+        if track.misses <= max_track_misses:
+            output_tracks.append(track)
+            stats["kept_unmatched"] += 1
+        else:
+            stats["dropped"] += 1
+    return output_tracks, next_track_id, stats
 
 
 def search_region(box: np.ndarray, width: int, height: int, pad: float) -> tuple[int, int, int, int]:
@@ -665,6 +750,7 @@ def main() -> None:
     source_fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
 
     tracks: list[Track] = []
+    next_track_id = 0
     writer = None
     metrics: dict[str, Any] = {
         "video": str(args.video),
@@ -697,6 +783,7 @@ def main() -> None:
         detection_source = None
         detection_answer = None
         box_filter_stats = None
+        association_stats = None
         admitted_track_ids = None
         track_prune_stats = None
         locate_seconds = 0.0
@@ -718,7 +805,17 @@ def main() -> None:
                 args.max_box_aspect,
                 args.edge_margin_frac,
             )
-            tracks = init_tracks(gray, filtered_boxes, w, h)
+            tracks, next_track_id, association_stats = associate_detections_to_tracks(
+                gray,
+                tracks,
+                filtered_boxes,
+                w,
+                h,
+                next_track_id,
+                args.assoc_iou_threshold,
+                args.assoc_center_frac,
+                args.max_track_misses,
+            )
             detection_source = "boxes-json"
             detection_seconds = time.perf_counter() - detection_start
         elif yolo_detector is not None and (
@@ -740,7 +837,17 @@ def main() -> None:
                 args.edge_margin_frac,
             )
             if filtered_boxes:
-                tracks = init_tracks(gray, filtered_boxes, w, h)
+                tracks, next_track_id, association_stats = associate_detections_to_tracks(
+                    gray,
+                    tracks,
+                    filtered_boxes,
+                    w,
+                    h,
+                    next_track_id,
+                    args.assoc_iou_threshold,
+                    args.assoc_center_frac,
+                    args.max_track_misses,
+                )
                 detection_source = "yolo"
             elif not tracks and not args.allow_empty_tracks:
                 raise RuntimeError(
@@ -771,7 +878,17 @@ def main() -> None:
                 args.edge_margin_frac,
             )
             if filtered_boxes:
-                tracks = init_tracks(gray, filtered_boxes, w, h)
+                tracks, next_track_id, association_stats = associate_detections_to_tracks(
+                    gray,
+                    tracks,
+                    filtered_boxes,
+                    w,
+                    h,
+                    next_track_id,
+                    args.assoc_iou_threshold,
+                    args.assoc_center_frac,
+                    args.max_track_misses,
+                )
                 detection_source = "locate-anything"
             elif not tracks:
                 raise RuntimeError(
@@ -864,6 +981,8 @@ def main() -> None:
                 "frame": frame_idx,
                 "output": str(frame_path) if frame_path is not None else None,
                 "boxes": [track.box.astype(float).tolist() for track in tracks],
+                "track_ids": [track.track_id for track in tracks],
+                "track_misses": [track.misses for track in tracks],
                 "track_scores": [track.score for track in tracks],
                 "sam_scores": sam_scores,
                 "sam_seconds": sam_seconds,
@@ -876,6 +995,7 @@ def main() -> None:
                 "frame_seconds": frame_seconds,
                 "detection_source": detection_source,
                 "box_filter_stats": box_filter_stats,
+                "association_stats": association_stats,
                 "admitted_track_ids": admitted_track_ids,
                 "track_prune_stats": track_prune_stats,
                 "locate_seconds": locate_seconds,
