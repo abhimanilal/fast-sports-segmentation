@@ -387,6 +387,8 @@ Local latency benchmark result: YOLO26n works, but did not beat YOLOv8n in this 
 
 Detector choice is not final on latency alone. The next detector benchmark must make accuracy first-class: label representative basketball frames and report precision/recall or mAP, missed-player counts, false-positive counts, and downstream track coverage for YOLOv8n versus YOLO26n. The browser ONNX demo currently uses YOLOv8n because it is the fastest measured path and exports cleanly; it should be swapped only if YOLO26n wins on both accuracy and deployable latency.
 
+SA-V detector accuracy benchmark result: YOLOv8n also edges out YOLO26n on the 3-video SA-V Subset 51 shard when scored class-agnostically against manual masklet boxes. At `imgsz=480`, YOLOv8n reached AP50/AP75 `0.353/0.325`, P/R/F1@0.5 at confidence 0.25 of `0.652/0.313/0.423`, and 48.17 FPS. YOLO26n reached AP50/AP75 `0.342/0.321`, P/R/F1@0.5 of `0.630/0.313/0.419`, and 47.15 FPS. Full details are in `docs\SA_V_DETECTOR_BENCHMARK.md`.
+
 ## YOLO -> EdgeTAM
 
 EdgeTAM can be used here with YOLO seed boxes. The experimental runner detects people on frame 0, filters bad/cropped boxes, prompts EdgeTAM with those boxes, and propagates masks through the extracted clip frames:
@@ -497,6 +499,7 @@ Comparison artifacts:
 - `outputs\sav_efficientsam_manual_3sample_sam30\summary.json`
 - `outputs\sav_comparison_3sample\comparison.md`
 - `outputs\sav_comparison_3sample\comparison.json`
+- `outputs\sav_yolo_detector_comparison\summary.json`
 
 ## Benchmarks
 

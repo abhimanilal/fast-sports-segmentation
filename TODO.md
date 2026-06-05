@@ -32,7 +32,7 @@ Stretch target:
 ## Immediate TODOs
 
 - Add benchmark fixtures for all five informal basketball clips.
-- Make detector accuracy a first-class metric for YOLOv8n vs YOLO26n selection: report precision/recall or mAP on labeled sports frames, plus missed-player and false-positive counts on the informal basketball clips.
+- Expand detector accuracy beyond SA-V by labeling sports-player frames: report precision/recall or mAP, missed-player counts, false-positive counts, and downstream track coverage on the informal basketball clips.
 - Pin the LocateAnything remote-code revision to avoid surprise Hugging Face code updates.
 - Add CI-light tests for box filtering, NMS, and metrics parsing.
 - Add multi-object identity quality metrics, not just speed metrics.
@@ -69,3 +69,4 @@ Stretch target:
 - Added a portfolio report generator and tracked `PORTFOLIO.md` with resume positioning, sports realtime metrics, seed-detector tradeoffs, and SA-V accuracy comparison.
 - Added a polished side-by-side portfolio demo exporter and validated a 60-frame 2340x540 demo clip.
 - Added start-frame aligned YOLO-seeded EdgeTAM chunks and validated a 450-frame, 15.015-second, 2340x540 portfolio demo clip.
+- Added a SA-V detector seed-box benchmark comparing YOLOv8n and YOLO26n with AP50/AP75 plus operating precision/recall; YOLOv8n won slightly on accuracy and speed on the 3-video shard.

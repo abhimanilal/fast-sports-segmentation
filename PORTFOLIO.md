@@ -63,12 +63,13 @@ Interpretation: EdgeTAM is the accuracy winner by a wide margin. EfficientSAM3 i
 
 - Built and benchmarked an end-to-end video segmentation system rather than only running a model.
 - Chose EdgeTAM over EfficientSAM3 for mask propagation based on measured SA-V accuracy.
+- Benchmarked YOLOv8n vs YOLO26n detector seed-box accuracy on SA-V; YOLOv8n was slightly better on AP50/AP75 and operating precision while also running faster.
 - Quantified detector tradeoffs: YOLO seed latency is seconds, LocateAnything seed latency is tens of seconds on this host.
 - Added court-space analytics and persistent IDs to connect segmentation output to sports analytics.
 
 ## Next Work
 
 - Add ByteTrack/DeepSORT-grade identity association for crowded sports footage.
-- Make detector accuracy first-class for YOLOv8n vs YOLO26n with labeled sports-frame precision/recall or mAP, missed-player counts, and false-positive counts.
+- Extend detector accuracy from SA-V seed-box coverage to labeled sports-player precision/recall or mAP, missed-player counts, and false-positive counts.
 - Add periodic EdgeTAM correction prompts from YOLO when players enter or occlude.
 - Expand SA-V evaluation from 3 videos to 25-50 videos with confidence intervals.
