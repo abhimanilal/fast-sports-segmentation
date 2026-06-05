@@ -32,6 +32,7 @@ Analytics export:
 ## Polished Demo Artifact
 
 - Video: `outputs\portfolio_demo_15s\sports_segmentation_demo_15s.mp4`
+- GitHub copy: `media\sports_segmentation_demo_15s.mp4`
 - Frames: `450`
 - Resolution: `2340x540`
 

@@ -47,6 +47,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("outputs/portfolio_demo/demo_summary.json"),
     )
+    parser.add_argument("--public-demo-video", type=Path, default=Path("media/sports_segmentation_demo_15s.mp4"))
     return parser.parse_args()
 
 
@@ -134,6 +135,7 @@ def main() -> None:
             "court_units": analytics.get("homography", {}).get("units"),
         },
         "demo": demo,
+        "public_demo_video": str(args.public_demo_video) if args.public_demo_video.exists() else None,
     }
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -219,6 +221,7 @@ Analytics export:
 ## Polished Demo Artifact
 
 {"- Video: `" + demo["output_video"] + "`" if demo else "- Demo video has not been generated yet."}
+{"- GitHub copy: `" + str(args.public_demo_video) + "`" if args.public_demo_video.exists() else ""}
 {"- Frames: `" + str(demo["frames"]) + "`" if demo else ""}
 {"- Resolution: `" + str(demo["canvas_width"]) + "x" + str(demo["canvas_height"]) + "`" if demo else ""}
 

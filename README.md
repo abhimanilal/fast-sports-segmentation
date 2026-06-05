@@ -28,6 +28,8 @@ Export the polished side-by-side demo clip:
 
 Validated demo artifact:
 
+- GitHub-viewable copy: `media\sports_segmentation_demo_15s.mp4`
+- Mid-frame preview: `media\sports_segmentation_demo_mid.jpg`
 - `outputs\portfolio_demo_15s\sports_segmentation_demo_15s.mp4`
 - 450 frames, 15.015 seconds, 29.97 FPS, 2340x540
 - built from three 150-frame YOLO-seeded EdgeTAM chunks to keep EdgeTAM video state memory bounded
