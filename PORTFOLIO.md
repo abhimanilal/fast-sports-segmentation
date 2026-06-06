@@ -4,12 +4,29 @@
 
 Built a realtime sports-video segmentation and analytics pipeline using YOLO/LocateAnything seeding, EdgeTAM video mask propagation, and court-space tracking analytics; benchmarked against EfficientSAM3 on SA-V with mask IoU, J@0.5, and FPS tradeoff analysis.
 
+Added a deployable browser path: an 11 MB YOLO11n-Seg student exported to ONNX Runtime Web that generates player masks client-side on uploaded or sample sports video.
+
 ## What The System Does
 
 - Detects player seed boxes with YOLO by default, with LocateAnything available for slower open-vocabulary recovery.
+- Runs a compact sports-player segmentation student directly in the browser for live mask overlays.
 - Propagates masks through video with EdgeTAM.
 - Exports per-frame tracking geometry and approximate court-space analytics.
 - Benchmarks segmentation quality on SA-V and speed on local sports clips.
+
+## Browser Student
+
+The current browser model is `media\models\yolo11n_sports_roi_sav19_student_320.onnx`, a one-class YOLO11n-Seg student trained from ROI-filtered sports pseudo-labels plus a balanced auxiliary set of SA-V manual masklets.
+
+Sports-domain validation at 320 input:
+
+| Model | Mask mAP50 | Mask mAP50-95 | Box mAP50 | Box mAP50-95 |
+| --- | ---: | ---: | ---: | ---: |
+| Generic YOLO11n-Seg | 0.687 | 0.338 | 0.728 | 0.411 |
+| ROI-only sports student | 0.732 | 0.394 | 0.773 | 0.482 |
+| ROI + balanced SA-V GT student | 0.765 | 0.406 | 0.810 | 0.516 |
+
+Expanded SA-V audit result: generic YOLO still leads on the 19-video SA-V sports/action holdout, so the browser model is selected for sports-demo quality rather than claimed as a universal SA-V segmenter.
 
 ## Sports Realtime Profile
 
@@ -63,6 +80,7 @@ Interpretation: EdgeTAM is the accuracy winner by a wide margin. EfficientSAM3 i
 
 - Built and benchmarked an end-to-end video segmentation system rather than only running a model.
 - Chose EdgeTAM over EfficientSAM3 for mask propagation based on measured SA-V accuracy.
+- Distilled a compact browser model and improved sports-domain mask mAP50 from `0.732` to `0.765` using balanced SA-V manual mask supervision.
 - Benchmarked YOLOv8n vs YOLO26n detector seed-box accuracy on SA-V; YOLOv8n was slightly better on AP50/AP75 and operating precision while also running faster.
 - Quantified detector tradeoffs: YOLO seed latency is seconds, LocateAnything seed latency is tens of seconds on this host.
 - Added court-space analytics and persistent IDs to connect segmentation output to sports analytics.
@@ -72,4 +90,4 @@ Interpretation: EdgeTAM is the accuracy winner by a wide margin. EfficientSAM3 i
 - Add ByteTrack/DeepSORT-grade identity association for crowded sports footage.
 - Extend detector accuracy from SA-V seed-box coverage to labeled sports-player precision/recall or mAP, missed-player counts, and false-positive counts.
 - Add periodic EdgeTAM correction prompts from YOLO when players enter or occlude.
-- Expand SA-V evaluation from 3 videos to 25-50 videos with confidence intervals.
+- Move browser inference and tracking into a worker/offscreen-canvas path before increasing resolution beyond 320.

@@ -516,14 +516,15 @@ async function getSegSession() {
   if (!state.segSession) {
     setRunState("Loading masks");
     ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
+    const modelUrl = "/media/models/yolo11n_sports_roi_sav19_student_320.onnx";
     try {
-      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_sports_student_320.onnx", {
+      state.segSession = await ort.InferenceSession.create(modelUrl, {
         executionProviders: ["webgpu", "wasm"],
         graphOptimizationLevel: "all",
       });
       state.segBackend = navigator.gpu ? "WebGPU or WASM" : "WASM fallback";
     } catch {
-      state.segSession = await ort.InferenceSession.create("/media/models/yolo11n_sports_student_320.onnx", {
+      state.segSession = await ort.InferenceSession.create(modelUrl, {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });

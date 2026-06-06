@@ -21,10 +21,12 @@ The browser model is a one-class YOLO11n-Seg student trained for `player`, expor
 
 - Teacher: `yolo11s-seg.pt`
 - Student init: `yolo11n-seg.pt`
-- Training data: 434 frames from five local basketball clips
-- Pseudo-labels: 2,752 teacher masks
+- Initial training data: 434 frames from five local basketball clips
+- Initial pseudo-labels: 2,752 teacher masks
 - Active-play cleanup: 548 teacher person detections rejected by normalized ROI foot-point filtering
-- Export: `media/models/yolo11n_sports_student_320.onnx`
+- Auxiliary GT: 346 sampled frames from a 19-video SA-V sports/action shard
+- Current export: `media/models/yolo11n_sports_roi_sav19_student_320.onnx`
+- Previous export: `media/models/yolo11n_sports_student_320.onnx`
 
 The first SA-V tiny-shard fine-tune was rejected. It validated poorly and visually stopped detecting basketball players, which is expected because the shard was generic object-video segmentation rather than target-domain sports players.
 
@@ -37,37 +39,34 @@ All rows below validate on the same 88-frame ROI-filtered teacher-label validati
 | Generic YOLO11n-Seg 320 | 0.687 | 0.338 | 0.728 | 0.411 | 3.7 ms |
 | Earlier non-ROI sports student | 0.589 | 0.294 | 0.642 | 0.355 | 4.5 ms |
 | ROI-distilled sports student | 0.732 | 0.394 | 0.773 | 0.482 | 4.2 ms |
+| ROI + balanced SA-V GT student | 0.765 | 0.406 | 0.810 | 0.516 | 2.6 ms |
 
-The ROI-distilled student is the only candidate that improves over the generic browser model on both mask agreement and box agreement.
+The balanced mixed student is the current browser candidate because it improves the sports-domain validation target without increasing model size.
 
-## SA-V Sports-Court Shard
+## SA-V Sports/Action Shard
 
-A broad SA-V tiny-shard fine-tune was not representative enough for basketball. To avoid hand labels, the repo now includes a semantic selector that searches SA-V Subset 51 for court/sports-like videos:
+A broad SA-V tiny-shard fine-tune was not representative enough for basketball. To avoid hand labels, the repo includes a semantic selector that searches SA-V Subset 51 for court/sports-like videos:
 
 ```powershell
-.venv\Scripts\python.exe scripts\select_sav_sports_shard.py --max-candidates 160 --top-k 16 --output-dir data\raw\sav_sports_candidates_160
-.venv\Scripts\python.exe scripts\export_sav_selected_shard.py --selected-ids examples\sav_sports_court_selected_ids.txt --output-dir data\raw\sav_sports_court_shard
+.venv\Scripts\python.exe scripts\select_sav_sports_shard.py --max-candidates 917 --top-k 64 --frames-per-video 5 --output-dir data\raw\sav_sports_candidates_full
+.venv\Scripts\python.exe scripts\export_sav_selected_shard.py --selected-ids examples\sav_sports_court_selected_ids.txt --output-dir data\raw\sav_sports_action_shard19 --annotation-field manual --overwrite
+.venv\Scripts\python.exe scripts\export_sav_yolo_seg_dataset.py --manifest data\raw\sav_sports_action_shard19\manifest.json --output-dir data\derived\sav_sports_action19_yolo_seg --max-samples 19 --max-frames 120 --max-side 640 --val-samples 4 --min-area-frac 0.001 --max-objects-per-frame 12
 ```
 
-The selected high-confidence IDs are:
+The expanded selected shard contains 19 visually relevant sports/action videos, 1,571 annotated frames, and 5,542 YOLO-format mask instances. The labels are real SA-V manual masklets, not YOLO pseudo-labels.
 
-- `sav_051321`: indoor basketball court
-- `sav_051575`: indoor court/gym scene
-- `sav_051926`: outdoor tennis court
-- `sav_051828`: outdoor tennis/court scene
-
-This produced 314 annotated SA-V frames and 1,689 exported YOLO-format mask instances. The labels are real SA-V manual masklets, not YOLO pseudo-labels.
-
-Validation on the 90-frame SA-V sports-court holdout:
+Validation on the 317-frame SA-V sports/action holdout:
 
 | Model | Mask mAP50 | Mask mAP50-95 | Box mAP50 | Box mAP50-95 |
 | --- | ---: | ---: | ---: | ---: |
-| Generic YOLO11n-Seg 320 | 0.071 | 0.033 | 0.269 | 0.211 |
-| Current ROI-distilled sports student | 0.118 | 0.035 | 0.282 | 0.144 |
-| SA-V-court-only quick student | 0.094 | 0.042 | 0.217 | 0.120 |
-| ROI student then SA-V-court fine-tune | 0.105 | 0.036 | 0.240 | 0.130 |
+| Generic YOLO11n-Seg 320 | 0.273 | 0.150 | 0.363 | 0.260 |
+| ROI-distilled sports student | 0.236 | 0.091 | 0.279 | 0.139 |
+| SA-V-only GT student | 0.182 | 0.071 | 0.329 | 0.171 |
+| ROI then SA-V GT, low LR | 0.228 | 0.097 | 0.340 | 0.192 |
+| ROI then SA-V GT, frozen backbone | 0.267 | 0.090 | 0.378 | 0.191 |
+| ROI + balanced SA-V GT student | 0.222 | 0.085 | 0.366 | 0.212 |
 
-The current deployed model remains the best browser candidate from this comparison. The useful next step is to use the SA-V sports-court shard as an auxiliary/temporal validation set, not to replace the sports-domain student with a tiny SA-V-only fine-tune.
+The expanded shard changed the conclusion from the tiny 4-video test. Generic YOLO is still the strongest SA-V GT baseline, while direct SA-V fine-tuning damages basketball-domain recall. The frozen SA-V model is closest on SA-V but visually misses too many active players. The deployed path is therefore mixed training: use SA-V as auxiliary mask supervision, select on sports-domain validation, and keep SA-V as an external accuracy audit.
 
 ## Visual Review
 
@@ -75,6 +74,7 @@ Accepted improvements:
 
 - Better recall on small and distant players in the rec-league and pickup clips.
 - Cleaner behavior than the first target-domain student, which over-learned broad person labels.
+- The mixed student recovers more active players in crowded rec-league frames than the previous ROI-only export.
 - Masks are good enough for a live browser overlay at 320 input when paired with ROI postprocessing.
 
 Remaining issues:
@@ -88,4 +88,4 @@ Remaining issues:
 - Add manually reviewed hard negatives for bench/sideline people.
 - Train with adjacent-frame consistency so the student learns track stability, not only per-frame masks.
 - Move browser decode and association into a worker/offscreen canvas path before increasing input size.
-- Add a small hand-labeled basketball validation set for true player precision/recall; teacher-label mAP is useful but not a final accuracy claim.
+- Add a player-only SA-V/person-overlap filter so SA-V object masklets do not reward non-player objects.
